@@ -1,0 +1,124 @@
+// The BirthWave — Database Schema
+// Run: npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum AppointmentStatus {
+  PENDING
+  APPROVED
+  RESCHEDULE_PROPOSED
+  DECLINED
+  CANCELLED
+  COMPLETED
+}
+
+enum SlotWindow {
+  MORNING
+  EVENING
+}
+
+enum RiskLevel {
+  LOW
+  HIGH
+}
+
+enum StaffRole {
+  ADMIN
+  DOCTOR
+  RECEPTION
+}
+
+model Patient {
+  id            String        @id @default(cuid())
+  phone         String        @unique // stored as +91XXXXXXXXXX
+  name          String?
+  age           Int?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  appointments  Appointment[]
+  assessments   FertilityAssessment[]
+  otpCodes      OtpCode[]
+}
+
+model Staff {
+  id           String    @id @default(cuid())
+  phone        String    @unique
+  name         String
+  passwordHash String? // optional if using OTP-only login
+  role         StaffRole @default(RECEPTION)
+  createdAt    DateTime  @default(now())
+  otpCodes     OtpCode[]
+}
+
+// Generic OTP store, usable for both Patient and Staff mobile login
+model OtpCode {
+  id          String    @id @default(cuid())
+  phone       String
+  codeHash    String // never store raw OTP
+  purpose     String // "LOGIN" | "RESCHEDULE_CONFIRM"
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  patientId   String?
+  patient     Patient?  @relation(fields: [patientId], references: [id])
+  staffId     String?
+  staff       Staff?    @relation(fields: [staffId], references: [id])
+
+  @@index([phone, purpose])
+}
+
+model Service {
+  id          String        @id @default(cuid())
+  name        String        @unique // e.g. "Childbirth Education", "PCOS Management"
+  description String?
+  active      Boolean       @default(true)
+  appointments Appointment[]
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  patientId       String
+  patient         Patient           @relation(fields: [patientId], references: [id])
+  serviceId       String
+  service         Service           @relation(fields: [serviceId], references: [id])
+  requestedDate   DateTime // date only, time encoded via slotWindow
+  slotWindow      SlotWindow
+  status          AppointmentStatus @default(PENDING)
+
+  // Reschedule proposal fields (set by staff, confirmed/declined by patient)
+  proposedDate       DateTime?
+  proposedSlotWindow SlotWindow?
+  proposalToken      String?   @unique // magic-link token sent via SMS
+  proposalTokenExp   DateTime?
+
+  notes           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([status])
+  @@index([requestedDate])
+}
+
+model FertilityAssessment {
+  id                String    @id @default(cuid())
+  patientId         String
+  patient           Patient   @relation(fields: [patientId], references: [id])
+  age               Int
+  tryingDurationMon Int // months trying to conceive
+  cycleRegularity   String // "REGULAR" | "IRREGULAR" | "SEVERELY_IRREGULAR"
+  priorDiagnosis    String[] // e.g. ["PCOS","ENDOMETRIOSIS","THYROID"]
+  priorMiscarriage  Boolean   @default(false)
+  lifestyleNotes    String?
+  riskLevel         RiskLevel
+  riskReasons       String[] // human-readable reasons that drove the classification
+  createdAt         DateTime  @default(now())
+}
