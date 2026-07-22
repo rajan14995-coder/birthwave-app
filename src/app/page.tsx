@@ -2,12 +2,12 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import HeroSection from '@/components/landing/HeroSection';
-import DoctorIntroSection from '@/components/landing/DoctorIntroSection';
-import StorytellingGrid from '@/components/landing/StorytellingGrid';
-import ServicesSection from '@/components/landing/ServicesSection';
-import TestimonialsSection from '@/components/landing/TestimonialsSection';
-import GalleryAndFaqSection from '@/components/landing/GalleryAndFaqSection';
+import HeroSection from '@/components/marketing/HeroSection';
+import DoctorIntroSection from '@/components/marketing/DoctorIntroSection';
+import StorytellingGrid from '@/components/marketing/StorytellingGrid';
+import ServicesSection from '@/components/marketing/ServicesSection';
+import TestimonialsSection from '@/components/marketing/TestimonialsSection';
+import GalleryAndFaqSection from '@/components/marketing/GalleryAndFaqSection';
 
 export default function Home() {
   const handleBookClick = () => {
