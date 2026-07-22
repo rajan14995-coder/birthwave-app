@@ -5,174 +5,164 @@ import React, { useState } from 'react';
 interface PatientAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onLoginSuccess: (patientData: { name: string; phone: string }) => void;
+  onLoginSuccess: (patient: { name: string; phone: string }) => void;
 }
 
 export default function PatientAuthModal({ isOpen, onClose, onLoginSuccess }: PatientAuthModalProps) {
-  const [step, setStep] = useState<1 | 2>(1); // Step 1: Info -> Step 2: OTP
-  const [patientName, setPatientName] = useState('');
+  const [step, setStep] = useState<'PHONE' | 'OTP' | 'NAME'>('PHONE');
   const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '']);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [name, setName] = useState('');
   const [error, setError] = useState('');
 
   if (!isOpen) return null;
 
-  const handleGenerateOtp = (e: React.FormEvent) => {
+  const handleSendOtp = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!patientName.trim()) {
-      setError('Please enter your full name');
-      return;
-    }
-    if (!phone || phone.length < 10) {
-      setError('Please enter a valid 10-digit mobile number');
+    if (phone.length < 10) {
+      setError('Please enter a valid 10-digit phone number');
       return;
     }
     setError('');
-    setIsSubmitting(true);
-
-    // Simulate OTP generation API call
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setStep(2);
-    }, 800);
-  };
-
-  const handleOtpChange = (index: number, value: string) => {
-    if (value.length > 1) return;
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
-
-    // Auto-advance input focus
-    if (value && index < 3) {
-      const nextInput = document.getElementById(`otp-input-${index + 1}`);
-      nextInput?.focus();
-    }
+    // Generate simulated 6-digit OTP
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(code);
+    setStep('OTP');
   };
 
   const handleVerifyOtp = (e: React.FormEvent) => {
     e.preventDefault();
-    const enteredOtp = otp.join('');
-    if (enteredOtp.length < 4) {
-      setError('Please enter the 4-digit code sent to your phone');
+    if (otp !== generatedOtp) {
+      setError(`Invalid OTP. Please enter ${generatedOtp}`);
       return;
     }
-
-    setIsSubmitting(true);
     setError('');
+    setStep('NAME');
+  };
 
-    // Simulate authentication verification
-    setTimeout(() => {
-      setIsSubmitting(false);
-      onLoginSuccess({ name: patientName, phone });
-      onClose();
-    }, 1000);
+  const handleCompleteLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError('Please enter your full name');
+      return;
+    }
+    onLoginSuccess({ name, phone });
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-      <div className="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl border border-rose-100 relative animate-in fade-in zoom-in duration-200">
-        {/* Close Button */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-rose-100 p-6 sm:p-8 relative">
+        
         <button
           onClick={onClose}
-          className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 text-xl font-bold"
+          className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-bold text-lg"
         >
           ✕
         </button>
 
-        {/* Modal Header */}
-        <div className="text-center mb-6">
-          <span className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 inline-flex items-center justify-center text-xl mb-3">
-            🔐
-          </span>
-          <h3 className="text-2xl font-bold text-gray-900">Patient Portal Login</h3>
-          <p className="text-xs text-gray-500 mt-1">
-            {step === 1 ? 'Step 1: Enter your details to get started' : 'Step 2: Enter the 4-digit OTP sent to your phone'}
-          </p>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl text-center">
-            {error}
-          </div>
-        )}
-
-        {/* Step 1 Form: Name & Phone */}
-        {step === 1 && (
-          <form onSubmit={handleGenerateOtp} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Patient Name</label>
-              <input
-                type="text"
-                placeholder="e.g. Ananya Sharma"
-                value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 text-sm outline-none transition-all"
-              />
+        {step === 'PHONE' && (
+          <form onSubmit={handleSendOtp} className="space-y-4">
+            <div className="text-center space-y-1">
+              <h3 className="text-xl font-bold text-slate-900">Patient Login / Register</h3>
+              <p className="text-xs text-slate-500">Enter your phone number to receive a verification code</p>
             </div>
 
+            {error && <p className="text-xs text-red-600 bg-red-50 p-2 rounded-xl text-center font-medium">{error}</p>}
+
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Phone Number</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Phone Number
+              </label>
               <input
                 type="tel"
-                placeholder="10-digit mobile number"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                placeholder="e.g. 9876543210"
                 maxLength={10}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 text-sm outline-none transition-all"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-rose-500 focus:outline-none"
               />
             </div>
 
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50 mt-2"
+              className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition-all"
             >
-              {isSubmitting ? 'Generating OTP...' : 'Generate OTP →'}
+              Send Verification Code →
             </button>
           </form>
         )}
 
-        {/* Step 2 Form: OTP Entry */}
-        {step === 2 && (
-          <form onSubmit={handleVerifyOtp} className="space-y-6">
-            <div>
-              <p className="text-xs text-gray-600 text-center mb-4">
-                Code sent to <strong className="text-gray-900">{phone}</strong>{' '}
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="text-rose-600 font-semibold underline text-xs ml-1"
-                >
-                  Edit
-                </button>
-              </p>
+        {step === 'OTP' && (
+          <form onSubmit={handleVerifyOtp} className="space-y-4">
+            <div className="text-center space-y-1">
+              <h3 className="text-xl font-bold text-slate-900">Verify Code</h3>
+              <p className="text-xs text-slate-500">Code sent to +91 {phone}</p>
+            </div>
 
-              <div className="flex justify-center gap-3">
-                {otp.map((digit, idx) => (
-                  <input
-                    key={idx}
-                    id={`otp-input-${idx}`}
-                    type="text"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleOtpChange(idx, e.target.value)}
-                    className="w-12 h-14 text-center text-xl font-bold rounded-xl border border-gray-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none transition-all"
-                  />
-                ))}
-              </div>
+            {/* Test OTP Banner */}
+            <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-center space-y-1">
+              <p className="text-[11px] font-bold text-amber-800">Simulated SMS Verification Code:</p>
+              <p className="text-2xl font-black tracking-widest text-amber-900">{generatedOtp}</p>
+            </div>
+
+            {error && <p className="text-xs text-red-600 bg-red-50 p-2 rounded-xl text-center font-medium">{error}</p>}
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 text-center">
+                Enter 6-Digit OTP
+              </label>
+              <input
+                type="text"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                maxLength={6}
+                placeholder="******"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-center text-lg font-bold tracking-widest focus:ring-2 focus:ring-rose-500 focus:outline-none"
+              />
             </div>
 
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50"
+              className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition-all"
             >
-              {isSubmitting ? 'Verifying...' : 'Confirm & Login'}
+              Verify OTP →
             </button>
           </form>
         )}
+
+        {step === 'NAME' && (
+          <form onSubmit={handleCompleteLogin} className="space-y-4">
+            <div className="text-center space-y-1">
+              <h3 className="text-xl font-bold text-slate-900">Patient Details</h3>
+              <p className="text-xs text-slate-500">Please confirm your full name for medical records</p>
+            </div>
+
+            {error && <p className="text-xs text-red-600 bg-red-50 p-2 rounded-xl text-center font-medium">{error}</p>}
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Full Name
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Amudha"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-rose-500 focus:outline-none"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition-all"
+            >
+              Enter Patient Portal →
+            </button>
+          </form>
+        )}
+
       </div>
     </div>
   );
