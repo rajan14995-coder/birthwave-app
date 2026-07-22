@@ -13,7 +13,7 @@ import MarketingFooter from '@/components/marketing/MarketingFooter';
 export default function Home() {
   const handleBookClick = () => {
     // Navigates or opens appointment booking modal/portal
-    window.location.href = '/patient';
+    window.location.href = '/patient/dashboard';
   };
 
   return (
