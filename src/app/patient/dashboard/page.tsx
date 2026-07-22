@@ -12,39 +12,19 @@ export default function PatientDashboard() {
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [isQuizOpen, setIsQuizOpen] = useState(false);
 
-  // Initial dummy appointments for demonstration
-  const [appointments, setAppointments] = useState<any[]>([
-    {
-      id: 'BW-849201',
-      patientName: 'Ananya Sharma',
-      patientPhone: '9876543210',
-      doctorName: 'Dr. Santhoshi',
-      preferredDate: '2026-08-01',
-      preferredTimeSlot: '09:00 AM - 11:00 AM',
-      exactTime: '10:15 AM',
-      reason: 'Prenatal Checkup',
-      notes: 'First trimester routine checkup',
-      status: 'Confirmed',
-      createdDate: '2026-07-20',
-    },
-    {
-      id: 'BW-392104',
-      patientName: 'Ananya Sharma',
-      patientPhone: '9876543210',
-      doctorName: 'Dr. Santhoshi',
-      preferredDate: '2026-08-05',
-      preferredTimeSlot: '02:00 PM - 04:00 PM',
-      exactTime: null,
-      suggestedTime: '03:30 PM - August 5th',
-      reason: 'Fertility Assessment',
-      notes: 'AI quiz results review',
-      status: 'Suggested Time',
-      createdDate: '2026-07-22',
-    },
-  ]);
+  // Initial state is empty (no phantom dummy records)
+  const [appointments, setAppointments] = useState<any[]>([]);
 
   const handleLoginSuccess = (data: { name: string; phone: string }) => {
     setPatient(data);
+  };
+
+  const handleBookClick = () => {
+    if (!patient) {
+      setIsAuthOpen(true);
+    } else {
+      setIsBookingOpen(true);
+    }
   };
 
   const handleBookingSuccess = (newAppointment: any) => {
@@ -92,7 +72,7 @@ export default function PatientDashboard() {
             {patient ? (
               <div className="flex items-center gap-3 bg-rose-50 px-4 py-2 rounded-2xl border border-rose-200">
                 <span className="w-8 h-8 rounded-full bg-rose-600 text-white font-bold flex items-center justify-center text-xs">
-                  {patient.name.charAt(0)}
+                  {patient.name.charAt(0).toUpperCase()}
                 </span>
                 <div className="text-left hidden sm:block">
                   <p className="text-xs font-bold text-gray-900">{patient.name}</p>
@@ -134,7 +114,7 @@ export default function PatientDashboard() {
             </p>
             <div className="pt-2 flex flex-wrap gap-3">
               <button
-                onClick={() => setIsBookingOpen(true)}
+                onClick={handleBookClick}
                 className="px-6 py-3 rounded-xl bg-white text-rose-900 font-bold text-xs shadow-md hover:bg-rose-50 transition-all"
               >
                 + Book New Appointment
@@ -191,7 +171,7 @@ export default function PatientDashboard() {
         <FertilityAssessmentQuiz
           onBookAppointment={() => {
             setIsQuizOpen(false);
-            setIsBookingOpen(true);
+            handleBookClick();
           }}
         />
       )}
