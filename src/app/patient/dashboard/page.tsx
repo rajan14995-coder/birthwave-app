@@ -188,7 +188,12 @@ export default function PatientDashboard() {
       />
 
       {isQuizOpen && (
-        <FertilityAssessmentQuiz onClose={() => setIsQuizOpen(false)} />
+        <FertilityAssessmentQuiz
+          onBookAppointment={() => {
+            setIsQuizOpen(false);
+            setIsBookingOpen(true);
+          }}
+        />
       )}
 
     </div>
