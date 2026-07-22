@@ -1,28 +1,26 @@
-@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bw-blush: #fff5f5;
-  --bw-rose-gold: #d4af37;
-  --bw-rose: #e8a0bf;
-  --bw-plum: #2c1820;
-  --bw-sage: #e8f0ec;
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
 }
 
 body {
-  background-color: var(--bw-blush);
-  color: var(--bw-plum);
-  font-family: "Plus Jakarta Sans", Inter, sans-serif;
+  color: rgb(var(--foreground-rgb));
+  background: white;
 }
 
-.status-badge {
-  @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold;
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
 }
+
+/* Custom Status Badges */
 .status-PENDING { @apply bg-amber-100 text-amber-800; }
-.status-APPROVED { @apply bg-sage text-emerald-800; }
+.status-APPROVED { @apply bg-emerald-100 text-emerald-800; }
 .status-RESCHEDULE_PROPOSED { @apply bg-blue-100 text-blue-800; }
 .status-DECLINED { @apply bg-red-100 text-red-800; }
-.status-CANCELLED { @apply bg-gray-200 text-gray-700; }
-.status-COMPLETED { @apply bg-purple-100 text-purple-800; }
