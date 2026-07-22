@@ -1,136 +1,184 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
+import React, { useState } from 'react';
 
-interface Service {
-  id: string;
-  name: string;
+interface BookingModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  patientInfo?: { name: string; phone: string } | null;
+  onBookingSuccess: (appointment: any) => void;
 }
 
-export default function BookingModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [serviceId, setServiceId] = useState("");
-  const [date, setDate] = useState("");
-  const [slotWindow, setSlotWindow] = useState<"MORNING" | "EVENING">("MORNING");
-  const [notes, setNotes] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+export default function BookingModal({
+  isOpen,
+  onClose,
+  patientInfo,
+  onBookingSuccess,
+}: BookingModalProps) {
+  const [date, setDate] = useState('');
+  const [timeSlot, setTimeSlot] = useState('');
+  const [reason, setReason] = useState('General Consultation');
+  const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const { data } = useQuery<{ services: Service[] }>({
-    queryKey: ["services"],
-    queryFn: () => fetch("/api/services").then((r) => r.json()),
-    enabled: open,
-  });
+  if (!isOpen) return null;
 
-  const bookMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/appointments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          serviceId,
-          requestedDate: new Date(date).toISOString(),
-          slotWindow,
-          notes: notes || undefined,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Booking failed");
-      return json;
-    },
-    onSuccess: () => {
-      setSuccess(true);
-      qc.invalidateQueries({ queryKey: ["appointments"] });
-    },
-    onError: (e: any) => setError(e.message),
-  });
+  const timeSlots = [
+    '09:00 AM - 11:00 AM',
+    '11:00 AM - 01:00 PM',
+    '02:00 PM - 04:00 PM',
+    '04:00 PM - 06:00 PM',
+  ];
 
-  if (!open) return null;
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!date) {
+      setError('Please select a preferred appointment date');
+      return;
+    }
+    if (!timeSlot) {
+      setError('Please choose a preferred time slot');
+      return;
+    }
+
+    setError('');
+    setIsSubmitting(true);
+
+    const bookingId = 'BW-' + Math.floor(100000 + Math.random() * 900000);
+
+    const newAppointment = {
+      id: bookingId,
+      patientName: patientInfo?.name || 'Guest Patient',
+      patientPhone: patientInfo?.phone || 'N/A',
+      doctorName: 'Dr. Santhoshi',
+      preferredDate: date,
+      preferredTimeSlot: timeSlot,
+      exactTime: null, // Pending clinical assignment
+      reason,
+      notes,
+      status: 'Pending Confirmation',
+      createdDate: new Date().toISOString().split('T')[0],
+    };
+
+    setTimeout(() => {
+      setIsSubmitting(false);
+      onBookingSuccess(newAppointment);
+      onClose();
+    }, 800);
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg"
-      >
-        {success ? (
-          <div className="text-center">
-            <p className="mb-1 text-lg font-semibold text-plum">Request Sent</p>
-            <p className="mb-4 text-sm text-plum/60">Status: Pending Confirmation. We'll notify you once it's approved.</p>
-            <button onClick={onClose} className="rounded-xl bg-plum px-6 py-2 text-white">
-              Done
-            </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+      <div className="bg-white w-full max-w-lg rounded-3xl p-8 shadow-2xl border border-rose-100 relative animate-in fade-in zoom-in duration-200">
+        
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 text-xl font-bold"
+        >
+          ✕
+        </button>
+
+        {/* Modal Header */}
+        <div className="mb-6">
+          <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-xs font-bold uppercase tracking-wider">
+            Dr. Santhoshi Consultation
+          </span>
+          <h3 className="text-2xl font-bold text-gray-900 mt-2">Book an Appointment</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            Select your preferred date and time slot. Our clinic team will confirm your exact slot.
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl">
+            {error}
           </div>
-        ) : (
-          <>
-            <h2 className="mb-4 text-lg font-semibold text-plum">Book an Appointment</h2>
+        )}
 
-            <label className="mb-1 block text-xs font-medium text-plum/60">Service</label>
-            <select
-              value={serviceId}
-              onChange={(e) => setServiceId(e.target.value)}
-              className="mb-3 w-full rounded-xl border border-rose/30 px-3 py-2 outline-none focus:ring-2 focus:ring-rose-gold"
-            >
-              <option value="">Select a service</option>
-              {data?.services.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-
-            <label className="mb-1 block text-xs font-medium text-plum/60">Date</label>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Preferred Date */}
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+              Preferred Date
+            </label>
             <input
               type="date"
+              min={new Date().toISOString().split('T')[0]}
               value={date}
-              min={new Date().toISOString().split("T")[0]}
               onChange={(e) => setDate(e.target.value)}
-              className="mb-3 w-full rounded-xl border border-rose/30 px-3 py-2 outline-none focus:ring-2 focus:ring-rose-gold"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 text-sm outline-none transition-all"
             />
+          </div>
 
-            <label className="mb-1 block text-xs font-medium text-plum/60">Preferred Slot</label>
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              {(["MORNING", "EVENING"] as const).map((w) => (
+          {/* Preferred Time Slot */}
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-2">
+              Preferred Time Slot
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {timeSlots.map((slot) => (
                 <button
-                  key={w}
-                  onClick={() => setSlotWindow(w)}
-                  className={`rounded-xl border px-4 py-2 text-sm ${
-                    slotWindow === w ? "border-rose-gold bg-blush" : "border-rose/30"
+                  key={slot}
+                  type="button"
+                  onClick={() => setTimeSlot(slot)}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-semibold border text-center transition-all ${
+                    timeSlot === slot
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-md'
+                      : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-rose-50'
                   }`}
                 >
-                  {w === "MORNING" ? "Morning" : "Evening"}
+                  {slot}
                 </button>
               ))}
             </div>
+          </div>
 
-            <label className="mb-1 block text-xs font-medium text-plum/60">Notes (optional)</label>
+          {/* Reason for Visit */}
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+              Reason for Visit
+            </label>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 text-sm outline-none transition-all bg-white"
+            >
+              <option value="General Consultation">General Consultation</option>
+              <option value="Prenatal Checkup">Prenatal Checkup</option>
+              <option value="Fertility Assessment">Fertility Assessment</option>
+              <option value="Postnatal Care">Postnatal Care</option>
+              <option value="Ultrasound Scan">Ultrasound Scan</option>
+            </select>
+          </div>
+
+          {/* Additional Notes */}
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+              Additional Notes (Optional)
+            </label>
             <textarea
+              rows={2}
+              placeholder="Any symptoms or specific requests for Dr. Santhoshi..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="mb-4 w-full rounded-xl border border-rose/30 px-3 py-2 outline-none focus:ring-2 focus:ring-rose-gold"
-              rows={2}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 text-sm outline-none transition-all"
             />
+          </div>
 
-            {error && <p className="mb-3 text-xs text-red-600">{error}</p>}
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50"
+          >
+            {isSubmitting ? 'Requesting Appointment...' : 'Submit Appointment Request →'}
+          </button>
+        </form>
 
-            <div className="flex justify-end gap-2">
-              <button onClick={onClose} className="rounded-xl px-4 py-2 text-sm text-plum/60">
-                Cancel
-              </button>
-              <button
-                disabled={!serviceId || !date || bookMutation.isPending}
-                onClick={() => bookMutation.mutate()}
-                className="rounded-xl bg-rose-gold px-6 py-2 text-sm font-medium text-white disabled:opacity-40"
-              >
-                {bookMutation.isPending ? "Booking…" : "Confirm Request"}
-              </button>
-            </div>
-          </>
-        )}
-      </motion.div>
+      </div>
     </div>
   );
 }
