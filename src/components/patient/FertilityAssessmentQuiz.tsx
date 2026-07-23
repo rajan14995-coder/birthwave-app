@@ -39,7 +39,7 @@ const QUESTIONS: Question[] = [
     ],
   },
 
-  // FEMALE PARTNER EVALUATION (10 QUESTIONS)
+  // FEMALE PARTNER EVALUATION
   {
     id: 3,
     category: 'Female Partner',
@@ -141,7 +141,7 @@ const QUESTIONS: Question[] = [
     ],
   },
 
-  // MALE PARTNER EVALUATION (5 QUESTIONS)
+  // MALE PARTNER EVALUATION
   {
     id: 13,
     category: 'Male Partner',
@@ -225,17 +225,32 @@ export default function FertilityAssessmentQuiz({ onBookAppointment, onClose }: 
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!isOptionSelected) return;
 
     const totalScore = Object.values(selectedAnswers).reduce((acc, curr) => acc + curr.riskScore, 0);
     setTotalRiskScore(totalScore);
-
     setIsAnalyzing(true);
-    setTimeout(() => {
-      setIsAnalyzing(false);
-      setShowResult(true);
-    }, 2000);
+
+    try {
+      // POST assessment data to backend API
+      await fetch('/api/fertility-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          answers: selectedAnswers,
+          totalRiskScore: totalScore,
+          createdAt: new Date().toISOString(),
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to post fertility assessment:', error);
+    } finally {
+      setTimeout(() => {
+        setIsAnalyzing(false);
+        setShowResult(true);
+      }, 1500);
+    }
   };
 
   return (
@@ -282,7 +297,6 @@ export default function FertilityAssessmentQuiz({ onBookAppointment, onClose }: 
                   </p>
                 </div>
 
-                {/* Evidence-based Prescriptions */}
                 <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
                   <h4 className="text-xs font-bold text-rose-400 uppercase tracking-wider border-b border-slate-800 pb-2">
                     Evidence-Based Clinical Guidelines (ACOG/ESHRE Standard)
@@ -389,7 +403,6 @@ export default function FertilityAssessmentQuiz({ onBookAppointment, onClose }: 
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Category Indicator & Progress Bar */}
             <div className="space-y-3">
               <div className="flex justify-between items-center text-xs">
                 <span className="font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
@@ -415,7 +428,6 @@ export default function FertilityAssessmentQuiz({ onBookAppointment, onClose }: 
               {currentQ.question}
             </h3>
 
-            {/* Options */}
             <div className="space-y-3">
               {currentQ.options.map((opt, idx) => {
                 const isSelected = selectedAnswers[currentQ.id]?.label === opt.label;
@@ -445,7 +457,6 @@ export default function FertilityAssessmentQuiz({ onBookAppointment, onClose }: 
               })}
             </div>
 
-            {/* Navigation Buttons */}
             <div className="flex justify-between items-center pt-2 border-t border-slate-800">
               <button
                 type="button"
