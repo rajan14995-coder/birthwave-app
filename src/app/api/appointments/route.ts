@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db'; // Ensure this points to your Prisma / Supabase DB instance
+import { db } from '@/lib/db'; // Ensure this points to your Prisma DB instance
+import { AppointmentStatus } from '@prisma/client'; // Import Enum if defined in Prisma
 
 export async function GET() {
   try {
@@ -51,10 +52,14 @@ export async function POST(request: Request) {
       preferred_date,
       preferredTimeSlot,
       preferred_time_slot,
+      status,
     } = body;
 
     // Generate custom booking ID format: BW-XXXXXX
     const customId = `BW-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    // Cast status safely to match Prisma type definition
+    const initialStatus = (status || 'Pending Confirmation') as AppointmentStatus;
 
     const newAppointment = await db.appointment.create({
       data: {
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
         reason: reason || 'Consultation',
         preferredDate: preferredDate || preferred_date,
         preferredTimeSlot: preferredTimeSlot || preferred_time_slot,
-        status: 'Pending Confirmation',
+        status: initialStatus,
       },
     });
 
@@ -90,7 +95,7 @@ export async function PUT(request: Request) {
     const updated = await db.appointment.update({
       where: { id },
       data: {
-        status,
+        status: status as AppointmentStatus,
         confirmedSlot: confirmedSlot || null,
         confirmedDate: confirmedDate || null,
       },
