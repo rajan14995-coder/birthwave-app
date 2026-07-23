@@ -16,6 +16,17 @@ const generateSubSlots = (preferredWindow: string) => {
 
 const ALTERNATIVE_DAY_SLOTS = ['04:30 PM', '05:00 PM', '05:30 PM', '06:00 PM'];
 
+// Helper to check if appointment requires doctor action
+const isPendingStatus = (status: string) => {
+  const s = (status || '').toUpperCase();
+  return s === 'PENDING' || s === 'PENDING CONFIRMATION' || s === 'RESCHEDULE_PROPOSED';
+};
+
+const isConfirmedStatus = (status: string) => {
+  const s = (status || '').toUpperCase();
+  return s === 'CONFIRMED';
+};
+
 export default function DoctorDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mobile, setMobile] = useState('');
@@ -25,7 +36,7 @@ export default function DoctorDashboard() {
   const [isLoading, setIsLoading] = useState(false);
 
   // Navigation & Analytics Views
-  const [activeTab, setActiveTab] = useState<'today' | 'action' | 'history' | 'monthly' | 'all'>('today');
+  const [activeTab, setActiveTab] = useState<'today' | 'action' | 'history' | 'monthly' | 'all'>('action');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Confirmation Modal State
@@ -48,7 +59,7 @@ export default function DoctorDashboard() {
   const loadAppointments = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/appointments');
+      const response = await fetch('/api/appointments', { cache: 'no-store' });
       if (response.ok) {
         const data = await response.json();
         setAppointments(Array.isArray(data) ? data : data.appointments || []);
@@ -98,7 +109,7 @@ export default function DoctorDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: confirmingApt.id,
-          status: 'Confirmed',
+          status: 'CONFIRMED',
           confirmedSlot: selectedExactSlot,
           confirmedDate: finalDate,
         }),
@@ -110,7 +121,7 @@ export default function DoctorDashboard() {
             apt.id === confirmingApt.id
               ? {
                   ...apt,
-                  status: 'Confirmed',
+                  status: 'CONFIRMED',
                   confirmedSlot: selectedExactSlot,
                   confirmedDate: finalDate,
                 }
@@ -132,7 +143,7 @@ export default function DoctorDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id,
-          status: 'Pending Confirmation',
+          status: 'PENDING',
           confirmedSlot: null,
         }),
       });
@@ -140,7 +151,7 @@ export default function DoctorDashboard() {
       if (response.ok) {
         setAppointments((prev) =>
           prev.map((apt) =>
-            apt.id === id ? { ...apt, status: 'Pending Confirmation', confirmedSlot: undefined } : apt
+            apt.id === id ? { ...apt, status: 'PENDING', confirmedSlot: undefined } : apt
           )
         );
       }
@@ -152,7 +163,7 @@ export default function DoctorDashboard() {
   // Get list of occupied slots on a date
   const getOccupiedSlots = (date: string) => {
     return appointments
-      .filter((a) => a.status === 'Confirmed' && (a.confirmedDate === date || a.preferredDate === date))
+      .filter((a) => isConfirmedStatus(a.status) && (a.confirmedDate === date || a.preferredDate === date))
       .map((a) => a.confirmedSlot);
   };
 
@@ -172,18 +183,18 @@ export default function DoctorDashboard() {
     if (activeTab === 'today') {
       return apt.preferredDate === todayStr || apt.confirmedDate === todayStr;
     } else if (activeTab === 'action') {
-      return apt.status === 'Pending Confirmation';
+      return isPendingStatus(apt.status);
     } else if (activeTab === 'history') {
-      return apt.status === 'Confirmed' || apt.status === 'Cancelled';
+      return isConfirmedStatus(apt.status) || (apt.status || '').toUpperCase() === 'CANCELLED';
     }
     return true;
   });
 
   // Calculate Metrics
   const todayCount = appointments.filter((a) => a.preferredDate === todayStr || a.confirmedDate === todayStr).length;
-  const actionCount = appointments.filter((a) => a.status === 'Pending Confirmation').length;
-  const historyCount = appointments.filter((a) => a.status === 'Confirmed' || a.status === 'Cancelled').length;
-  const totalConfirmed = appointments.filter((a) => a.status === 'Confirmed').length;
+  const actionCount = appointments.filter((a) => isPendingStatus(a.status)).length;
+  const historyCount = appointments.filter((a) => isConfirmedStatus(a.status) || (a.status || '').toUpperCase() === 'CANCELLED').length;
+  const totalConfirmed = appointments.filter((a) => isConfirmedStatus(a.status)).length;
 
   if (!isAuthenticated) {
     return (
@@ -452,9 +463,9 @@ export default function DoctorDashboard() {
                       </span>
                       <span
                         className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          apt.status === 'Confirmed'
+                          isConfirmedStatus(apt.status)
                             ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                            : apt.status === 'Cancelled'
+                            : (apt.status || '').toUpperCase() === 'CANCELLED'
                             ? 'bg-rose-950 text-rose-400 border border-rose-800'
                             : 'bg-amber-950 text-amber-400 border border-amber-800'
                         }`}
@@ -484,7 +495,7 @@ export default function DoctorDashboard() {
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">
-                    {apt.status === 'Pending Confirmation' && (
+                    {isPendingStatus(apt.status) && (
                       <button
                         onClick={() => initiateConfirmation(apt)}
                         className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all"
@@ -493,7 +504,7 @@ export default function DoctorDashboard() {
                       </button>
                     )}
 
-                    {apt.status === 'Confirmed' && (
+                    {isConfirmedStatus(apt.status) && (
                       <button
                         onClick={() => handleMoveBackToPending(apt.id)}
                         className="px-4 py-2.5 rounded-xl bg-amber-950 hover:bg-amber-900 text-amber-300 border border-amber-800 font-bold text-xs transition-all"
