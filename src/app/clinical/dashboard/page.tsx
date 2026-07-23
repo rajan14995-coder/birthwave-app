@@ -83,7 +83,7 @@ export default function DoctorDashboard() {
       }
     } catch (err) {
       console.error('Error fetching appointments from API:', err);
-    } font-sans finally {
+    } finally {
       setIsLoading(false);
     }
   };
