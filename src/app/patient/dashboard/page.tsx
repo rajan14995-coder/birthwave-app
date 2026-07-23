@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import BookingModal from '@/components/patient/BookingModal';
 import AppointmentHistory from '@/components/patient/AppointmentHistory';
@@ -14,6 +14,21 @@ export default function PatientDashboard() {
   const [isQuizOpen, setIsQuizOpen] = useState(false);
   const [appointments, setAppointments] = useState<any[]>([]);
 
+  // Fetch appointments directly from Database API by phone
+  const fetchPatientAppointments = useCallback(async (phone: string) => {
+    try {
+      const res = await fetch(`/api/appointments?phone=${encodeURIComponent(phone)}`, {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAppointments(data);
+      }
+    } catch (error) {
+      console.error('Failed to load patient appointments:', error);
+    }
+  }, []);
+
   useEffect(() => {
     const savedPatient = localStorage.getItem('bw_patient');
     if (!savedPatient) {
@@ -22,27 +37,20 @@ export default function PatientDashboard() {
     } else {
       const parsed = JSON.parse(savedPatient);
       setPatient(parsed);
-      loadPatientAppointments(parsed.phone);
+      fetchPatientAppointments(parsed.phone);
       setLoading(false);
     }
-  }, [router]);
-
-  const loadPatientAppointments = (phone: string) => {
-    const allApps = JSON.parse(localStorage.getItem('bw_appointments') || '[]');
-    const myApps = allApps.filter((app: any) => app.patientPhone === phone);
-    setAppointments(myApps);
-  };
+  }, [router, fetchPatientAppointments]);
 
   const handleLogout = () => {
     localStorage.removeItem('bw_patient');
     router.replace('/patient/login');
   };
 
-  const handleBookingSuccess = (newAppointment: any) => {
-    const allApps = JSON.parse(localStorage.getItem('bw_appointments') || '[]');
-    const updated = [newAppointment, ...allApps];
-    localStorage.setItem('bw_appointments', JSON.stringify(updated));
-    if (patient) loadPatientAppointments(patient.phone);
+  const handleBookingSuccess = (_newAppointment: any) => {
+    if (patient?.phone) {
+      fetchPatientAppointments(patient.phone);
+    }
   };
 
   if (loading) {
