@@ -2,8 +2,20 @@
 
 import React, { useState, useEffect } from 'react';
 
+interface Appointment {
+  id: string;
+  patientName: string;
+  patientPhone: string;
+  reason: string;
+  preferredDate: string;
+  preferredTimeSlot?: string;
+  confirmedSlot?: string | null;
+  confirmedDate?: string;
+  status: string;
+}
+
 // Slot generation helper
-const generateSubSlots = (preferredWindow: string) => {
+const generateSubSlots = (preferredWindow: string = '') => {
   if (preferredWindow.includes('09:00 AM')) {
     return ['09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM'];
   } else if (preferredWindow.includes('11:00 AM')) {
@@ -16,7 +28,7 @@ const generateSubSlots = (preferredWindow: string) => {
 
 const ALTERNATIVE_DAY_SLOTS = ['04:30 PM', '05:00 PM', '05:30 PM', '06:00 PM'];
 
-// Helper to check if appointment requires doctor action
+// Status Helpers
 const isPendingStatus = (status: string) => {
   const s = (status || '').toUpperCase();
   return s === 'PENDING' || s === 'PENDING CONFIRMATION' || s === 'RESCHEDULE_PROPOSED';
@@ -32,23 +44,28 @@ export default function DoctorDashboard() {
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [appointments, setAppointments] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Navigation & Analytics Views
   const [activeTab, setActiveTab] = useState<'today' | 'action' | 'history' | 'monthly' | 'all'>('action');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Confirmation Modal State
-  const [confirmingApt, setConfirmingApt] = useState<any | null>(null);
+  const [confirmingApt, setConfirmingApt] = useState<Appointment | null>(null);
   const [selectedExactSlot, setSelectedExactSlot] = useState('');
   const [customDate, setCustomDate] = useState('');
   const [useCustomDate, setUseCustomDate] = useState(false);
+  const [todayStr, setTodayStr] = useState('');
 
   const envMobile = process.env.NEXT_PUBLIC_DOCTOR_MOBILE || '9876543210';
   const envPassword = process.env.NEXT_PUBLIC_DOCTOR_PASSWORD || 'doctor@123';
 
   useEffect(() => {
+    // Avoid hydration mismatch by setting dynamic date client-side
+    setTodayStr(new Date().toISOString().split('T')[0]);
+
     const doctorAuth = localStorage.getItem('bw_doctor_auth');
     if (doctorAuth === 'true') {
       setIsAuthenticated(true);
@@ -66,7 +83,7 @@ export default function DoctorDashboard() {
       }
     } catch (err) {
       console.error('Error fetching appointments from API:', err);
-    } finally {
+    } font-sans finally {
       setIsLoading(false);
     }
   };
@@ -89,7 +106,7 @@ export default function DoctorDashboard() {
   };
 
   // Open Modal to pick specific exact time slot
-  const initiateConfirmation = (apt: any) => {
+  const initiateConfirmation = (apt: Appointment) => {
     setConfirmingApt(apt);
     const subSlots = generateSubSlots(apt.preferredTimeSlot || '');
     setSelectedExactSlot(subSlots[0] || '');
@@ -102,6 +119,7 @@ export default function DoctorDashboard() {
     if (!confirmingApt) return;
 
     const finalDate = useCustomDate ? customDate : confirmingApt.preferredDate;
+    setIsUpdating(true);
 
     try {
       const response = await fetch('/api/appointments', {
@@ -132,11 +150,13 @@ export default function DoctorDashboard() {
     } catch (err) {
       console.error('Error confirming appointment:', err);
     } finally {
+      setIsUpdating(false);
       setConfirmingApt(null);
     }
   };
 
   const handleMoveBackToPending = async (id: string) => {
+    setIsUpdating(true);
     try {
       const response = await fetch('/api/appointments', {
         method: 'PUT',
@@ -151,12 +171,14 @@ export default function DoctorDashboard() {
       if (response.ok) {
         setAppointments((prev) =>
           prev.map((apt) =>
-            apt.id === id ? { ...apt, status: 'PENDING', confirmedSlot: undefined } : apt
+            apt.id === id ? { ...apt, status: 'PENDING', confirmedSlot: null } : apt
           )
         );
       }
     } catch (err) {
       console.error('Error updating appointment:', err);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -166,8 +188,6 @@ export default function DoctorDashboard() {
       .filter((a) => isConfirmedStatus(a.status) && (a.confirmedDate === date || a.preferredDate === date))
       .map((a) => a.confirmedSlot);
   };
-
-  const todayStr = new Date().toISOString().split('T')[0];
 
   // Filtering Logic
   const filteredAppointments = appointments.filter((apt) => {
@@ -198,11 +218,11 @@ export default function DoctorDashboard() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 font-sans">
-        <form onSubmit={handleLogin} className="bg-slate-900 border border-slate-800 p-8 rounded-3xl w-full max-w-md space-y-5 text-white shadow-2xl">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 font-sans text-slate-100">
+        <form onSubmit={handleLogin} className="bg-slate-900 border border-slate-800 p-8 rounded-3xl w-full max-w-md space-y-5 shadow-2xl">
           <div className="text-center space-y-1">
             <span className="text-xs font-bold text-rose-500 uppercase tracking-widest">Clinical Desk Access</span>
-            <h2 className="text-2xl font-black">Dr. Santhoshi Portal</h2>
+            <h2 className="text-2xl font-black text-white">Dr. Santhoshi Portal</h2>
           </div>
           {error && <p className="text-xs text-red-400 bg-red-950/50 p-3 rounded-xl border border-red-800 text-center font-medium">{error}</p>}
           <div>
@@ -240,7 +260,7 @@ export default function DoctorDashboard() {
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 font-sans">
       
       {/* Header */}
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-6 mb-8 gap-4">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-6 mb-8 gap-4 max-w-6xl mx-auto">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-black text-white">Dr. Santhoshi Clinical Desk</h1>
@@ -254,8 +274,8 @@ export default function DoctorDashboard() {
         <div className="flex items-center gap-3">
           <button
             onClick={loadAppointments}
-            disabled={isLoading}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 transition-all border border-slate-700"
+            disabled={isLoading || isUpdating}
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-bold text-slate-300 transition-all border border-slate-700"
           >
             {isLoading ? '⏳ Refreshing...' : '🔄 Refresh Queue'}
           </button>
@@ -347,7 +367,7 @@ export default function DoctorDashboard() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search name, phone, or ID..."
-                className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                className="w-full pl-9 pr-8 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
               />
               <span className="absolute left-3 top-3 text-xs text-slate-500">🔍</span>
               {searchQuery && (
@@ -451,7 +471,7 @@ export default function DoctorDashboard() {
                 </p>
               </div>
             ) : (
-              filteredAppointments.map((apt: any) => (
+              filteredAppointments.map((apt) => (
                 <div
                   key={apt.id}
                   className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl flex flex-col md:flex-row justify-between md:items-center gap-6 hover:border-slate-700 transition-all"
@@ -498,7 +518,8 @@ export default function DoctorDashboard() {
                     {isPendingStatus(apt.status) && (
                       <button
                         onClick={() => initiateConfirmation(apt)}
-                        className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all"
+                        disabled={isUpdating}
+                        className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all"
                       >
                         Confirm Slot ✓
                       </button>
@@ -507,7 +528,8 @@ export default function DoctorDashboard() {
                     {isConfirmedStatus(apt.status) && (
                       <button
                         onClick={() => handleMoveBackToPending(apt.id)}
-                        className="px-4 py-2.5 rounded-xl bg-amber-950 hover:bg-amber-900 text-amber-300 border border-amber-800 font-bold text-xs transition-all"
+                        disabled={isUpdating}
+                        className="px-4 py-2.5 rounded-xl bg-amber-950 hover:bg-amber-900 border border-amber-800 text-amber-300 disabled:opacity-50 font-bold text-xs transition-all"
                       >
                         Reschedule / Move Pending
                       </button>
@@ -647,10 +669,10 @@ export default function DoctorDashboard() {
             <div className="flex gap-3 pt-4 border-t border-slate-800">
               <button
                 onClick={finalizeConfirmation}
-                disabled={!selectedExactSlot}
-                className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all"
+                disabled={!selectedExactSlot || isUpdating}
+                className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all"
               >
-                Confirm Booking ({selectedExactSlot || 'Select Slot'})
+                {isUpdating ? 'Saving...' : `Confirm Booking (${selectedExactSlot || 'Select Slot'})`}
               </button>
               <button
                 onClick={() => setConfirmingApt(null)}
