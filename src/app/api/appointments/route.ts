@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// Helper to derive Enum value for slotWindow
 function getSlotWindowEnum(slot: string): 'MORNING' | 'AFTERNOON' | 'EVENING' {
   const lower = (slot || '').toLowerCase();
   if (lower.includes('09:00') || lower.includes('11:00') || lower.includes('am')) {
@@ -16,20 +15,24 @@ function getSlotWindowEnum(slot: string): 'MORNING' | 'AFTERNOON' | 'EVENING' {
 export async function GET() {
   try {
     const rawAppointments = await (db as any).appointment.findMany({
+      include: {
+        patient: true,
+        service: true,
+      },
       orderBy: { createdAt: 'desc' },
     });
 
     const appointments = rawAppointments.map((apt: any) => ({
       id: apt.id,
-      patientName: apt.patientName || apt.patient_name || 'Patient',
-      patientPhone: apt.patientPhone || apt.patient_phone || 'N/A',
-      reason: apt.reason || 'Consultation',
-      preferredDate: apt.preferredDate || (apt.requestedDate ? new Date(apt.requestedDate).toISOString().split('T')[0] : ''),
-      preferredTimeSlot: apt.preferredTimeSlot || apt.preferred_time_slot || apt.slotWindow || '',
+      patientName: apt.patient?.name || apt.patientName || 'Patient',
+      patientPhone: apt.patient?.phone || apt.patientPhone || 'N/A',
+      reason: apt.service?.title || apt.service?.name || apt.reason || 'Consultation',
+      preferredDate: apt.requestedDate ? new Date(apt.requestedDate).toISOString().split('T')[0] : '',
+      preferredTimeSlot: apt.slotWindow || '',
       status: apt.status || 'PENDING',
-      confirmedSlot: apt.confirmedSlot || apt.confirmed_slot || null,
-      confirmedDate: apt.confirmedDate || apt.confirmed_date || null,
-      createdAt: apt.createdAt || apt.created_at,
+      confirmedSlot: apt.proposedSlotWindow || null,
+      confirmedDate: apt.proposedDate ? new Date(apt.proposedDate).toISOString().split('T')[0] : null,
+      createdAt: apt.createdAt,
     }));
 
     return NextResponse.json(appointments, {
@@ -38,12 +41,9 @@ export async function GET() {
         'Cache-Control': 'no-store, max-age=0',
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching appointments:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch appointments' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error?.message || 'Failed to fetch appointments' }, { status: 500 });
   }
 }
 
@@ -63,25 +63,69 @@ export async function POST(request: Request) {
       preferred_time_slot,
       status,
       slotWindow,
+      patientId,
+      serviceId,
     } = body;
 
+    const name = patientName || patient_name || 'Amudha';
+    const phone = patientPhone || patient_phone || '9489881864';
     const dateStr = preferredDate || preferred_date || new Date().toISOString().split('T')[0];
     const parsedDateTime = new Date(dateStr);
     const validRequestedDate = isNaN(parsedDateTime.getTime()) ? new Date() : parsedDateTime;
-
     const rawSlot = preferredTimeSlot || preferred_time_slot || '';
     const mappedSlotWindow = slotWindow || getSlotWindowEnum(rawSlot);
 
+    // 1. Resolve or create Patient record
+    let targetPatientId = patientId;
+
+    if (!targetPatientId) {
+      // Find patient by phone or name
+      let patient = await (db as any).patient.findFirst({
+        where: {
+          OR: [{ phone: phone }, { name: name }],
+        },
+      });
+
+      if (!patient) {
+        // Create patient if not existing
+        patient = await (db as any).patient.create({
+          data: {
+            name: name,
+            phone: phone,
+          },
+        });
+      }
+      targetPatientId = patient.id;
+    }
+
+    // 2. Resolve or fallback Service record
+    let targetServiceId = serviceId;
+
+    if (!targetServiceId) {
+      let service = await (db as any).service.findFirst();
+      if (!service) {
+        service = await (db as any).service.create({
+          data: {
+            title: reason || 'General Consultation',
+            name: reason || 'General Consultation',
+          },
+        });
+      }
+      targetServiceId = service.id;
+    }
+
+    // 3. Create Appointment with foreign keys
     const newAppointment = await (db as any).appointment.create({
       data: {
-        patientName: patientName || patient_name || 'Patient',
-        patientPhone: patientPhone || patient_phone || 'N/A',
-        reason: reason || 'Consultation',
-        preferredDate: dateStr,
+        patientId: targetPatientId,
+        serviceId: targetServiceId,
         requestedDate: validRequestedDate,
-        preferredTimeSlot: rawSlot,
         slotWindow: mappedSlotWindow,
         status: status || 'PENDING',
+      },
+      include: {
+        patient: true,
+        service: true,
       },
     });
 
@@ -89,7 +133,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('Error creating appointment:', error);
     return NextResponse.json(
-      { error: error?.message || 'Failed to create appointment' },
+      { error: error?.message || String(error) },
       { status: 500 }
     );
   }
@@ -108,8 +152,8 @@ export async function PUT(request: Request) {
       where: { id },
       data: {
         status: status,
-        confirmedSlot: confirmedSlot || null,
-        confirmedDate: confirmedDate || confirmed_date || null,
+        proposedSlotWindow: confirmedSlot || null,
+        proposedDate: confirmedDate || confirmed_date ? new Date(confirmedDate || confirmed_date) : null,
       },
     });
 
