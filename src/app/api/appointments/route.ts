@@ -8,12 +8,12 @@ export async function GET() {
     });
 
     const appointments = rawAppointments.map((apt: any) => ({
-      id: apt.id || apt.booking_id || apt.bookingId,
-      patientName: apt.patientName || apt.patient_name || apt.name || 'Patient',
-      patientPhone: apt.patientPhone || apt.patient_phone || apt.phone || 'N/A',
-      reason: apt.reason || apt.service || 'Consultation',
-      preferredDate: apt.preferredDate || apt.preferred_date || apt.date || '',
-      preferredTimeSlot: apt.preferredTimeSlot || apt.preferred_time_slot || apt.time_slot || apt.slot || '',
+      id: apt.id,
+      patientName: apt.patientName || apt.patient_name || 'Patient',
+      patientPhone: apt.patientPhone || apt.patient_phone || 'N/A',
+      reason: apt.reason || 'Consultation',
+      preferredDate: apt.preferredDate || apt.preferred_date || '',
+      preferredTimeSlot: apt.preferredTimeSlot || apt.preferred_time_slot || '',
       status: apt.status || 'PENDING',
       confirmedSlot: apt.confirmedSlot || apt.confirmed_slot || null,
       confirmedDate: apt.confirmedDate || apt.confirmed_date || null,
@@ -52,44 +52,17 @@ export async function POST(request: Request) {
       status,
     } = body;
 
-    const customId = `BW-${Math.floor(100000 + Math.random() * 900000)}`;
-
-    const pName = patientName || patient_name || 'Patient';
-    const pPhone = patientPhone || patient_phone || 'N/A';
-    const pReason = reason || 'Consultation';
-    const pDate = preferredDate || preferred_date || '';
-    const pSlot = preferredTimeSlot || preferred_time_slot || '';
-    const pStatus = status || 'PENDING';
-
-    let newAppointment;
-
-    // First attempt: camelCase schema fields
-    try {
-      newAppointment = await (db as any).appointment.create({
-        data: {
-          id: customId,
-          patientName: pName,
-          patientPhone: pPhone,
-          reason: pReason,
-          preferredDate: pDate,
-          preferredTimeSlot: pSlot,
-          status: pStatus,
-        },
-      });
-    } catch (dbErr) {
-      // Fallback attempt: snake_case schema fields
-      newAppointment = await (db as any).appointment.create({
-        data: {
-          id: customId,
-          patient_name: pName,
-          patient_phone: pPhone,
-          reason: pReason,
-          preferred_date: pDate,
-          preferred_time_slot: pSlot,
-          status: pStatus,
-        },
-      });
-    }
+    // Use camelCase to match Prisma schema definition cleanly
+    const newAppointment = await (db as any).appointment.create({
+      data: {
+        patientName: patientName || patient_name || 'Patient',
+        patientPhone: patientPhone || patient_phone || 'N/A',
+        reason: reason || 'Consultation',
+        preferredDate: preferredDate || preferred_date || '',
+        preferredTimeSlot: preferredTimeSlot || preferred_time_slot || '',
+        status: status || 'PENDING',
+      },
+    });
 
     return NextResponse.json(newAppointment, { status: 201 });
   } catch (error: any) {
@@ -104,36 +77,20 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { id, status, confirmedSlot, confirmed_slot, confirmedDate, confirmed_date } = body;
+    const { id, status, confirmedSlot, confirmed_date, confirmedDate } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'Missing appointment ID' }, { status: 400 });
     }
 
-    const cSlot = confirmedSlot || confirmed_slot || null;
-    const cDate = confirmedDate || confirmed_date || null;
-
-    let updated;
-
-    try {
-      updated = await (db as any).appointment.update({
-        where: { id },
-        data: {
-          status: status,
-          confirmedSlot: cSlot,
-          confirmedDate: cDate,
-        },
-      });
-    } catch (dbErr) {
-      updated = await (db as any).appointment.update({
-        where: { id },
-        data: {
-          status: status,
-          confirmed_slot: cSlot,
-          confirmed_date: cDate,
-        },
-      });
-    }
+    const updated = await (db as any).appointment.update({
+      where: { id },
+      data: {
+        status: status,
+        confirmedSlot: confirmedSlot || null,
+        confirmedDate: confirmedDate || confirmed_date || null,
+      },
+    });
 
     return NextResponse.json(updated, { status: 200 });
   } catch (error: any) {
