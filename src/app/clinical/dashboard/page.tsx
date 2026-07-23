@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 interface Appointment {
   id: string;
@@ -15,7 +15,7 @@ interface Appointment {
 }
 
 // Slot generation helper
-const generateSubSlots = (preferredWindow: string = '') => {
+const generateSubSlots = (preferredWindow: string = ''): string[] => {
   if (preferredWindow.includes('09:00 AM')) {
     return ['09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM'];
   } else if (preferredWindow.includes('11:00 AM')) {
@@ -43,10 +43,12 @@ export default function DoctorDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [loginError, setLoginError] = useState('');
+  
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Navigation & Analytics Views
   const [activeTab, setActiveTab] = useState<'today' | 'action' | 'history' | 'monthly' | 'all'>('action');
@@ -62,8 +64,26 @@ export default function DoctorDashboard() {
   const envMobile = process.env.NEXT_PUBLIC_DOCTOR_MOBILE || '9876543210';
   const envPassword = process.env.NEXT_PUBLIC_DOCTOR_PASSWORD || 'doctor@123';
 
+  const loadAppointments = useCallback(async () => {
+    setIsLoading(true);
+    setFeedbackMsg(null);
+    try {
+      const response = await fetch('/api/appointments', { cache: 'no-store' });
+      if (response.ok) {
+        const data = await response.json();
+        setAppointments(Array.isArray(data) ? data : data.appointments || []);
+      } else {
+        throw new Error('Failed to load appointments from server.');
+      }
+    } catch (err) {
+      console.error('Error fetching appointments:', err);
+      setFeedbackMsg({ type: 'error', text: 'Could not fetch latest appointments. Please try again.' });
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    // Avoid hydration mismatch by setting dynamic date client-side
     setTodayStr(new Date().toISOString().split('T')[0]);
 
     const doctorAuth = localStorage.getItem('bw_doctor_auth');
@@ -71,32 +91,17 @@ export default function DoctorDashboard() {
       setIsAuthenticated(true);
       loadAppointments();
     }
-  }, []);
-
-  const loadAppointments = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch('/api/appointments', { cache: 'no-store' });
-      if (response.ok) {
-        const data = await response.json();
-        setAppointments(Array.isArray(data) ? data : data.appointments || []);
-      }
-    } catch (err) {
-      console.error('Error fetching appointments from API:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [loadAppointments]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (mobile === envMobile && password === envPassword) {
       setIsAuthenticated(true);
       localStorage.setItem('bw_doctor_auth', 'true');
-      setError('');
+      setLoginError('');
       loadAppointments();
     } else {
-      setError('Invalid Mobile Number or Password');
+      setLoginError('Invalid Mobile Number or Password');
     }
   };
 
@@ -114,12 +119,19 @@ export default function DoctorDashboard() {
     setCustomDate(apt.preferredDate || new Date().toISOString().split('T')[0]);
   };
 
+  const closeModal = () => {
+    setConfirmingApt(null);
+    setSelectedExactSlot('');
+    setUseCustomDate(false);
+  };
+
   // Save Confirmed Slot to DB via API
   const finalizeConfirmation = async () => {
     if (!confirmingApt) return;
 
     const finalDate = useCustomDate ? customDate : confirmingApt.preferredDate;
     setIsUpdating(true);
+    setFeedbackMsg(null);
 
     try {
       const response = await fetch('/api/appointments', {
@@ -146,17 +158,22 @@ export default function DoctorDashboard() {
               : apt
           )
         );
+        setFeedbackMsg({ type: 'success', text: `Appointment for ${confirmingApt.patientName} confirmed successfully.` });
+        closeModal();
+      } else {
+        throw new Error('Failed to update booking status');
       }
     } catch (err) {
       console.error('Error confirming appointment:', err);
+      setFeedbackMsg({ type: 'error', text: 'Failed to confirm booking. Please try again.' });
     } finally {
       setIsUpdating(false);
-      setConfirmingApt(null);
     }
   };
 
   const handleMoveBackToPending = async (id: string) => {
     setIsUpdating(true);
+    setFeedbackMsg(null);
     try {
       const response = await fetch('/api/appointments', {
         method: 'PUT',
@@ -174,9 +191,13 @@ export default function DoctorDashboard() {
             apt.id === id ? { ...apt, status: 'PENDING', confirmedSlot: null } : apt
           )
         );
+        setFeedbackMsg({ type: 'success', text: 'Appointment moved back to pending status.' });
+      } else {
+        throw new Error('Failed to revert status');
       }
     } catch (err) {
       console.error('Error updating appointment:', err);
+      setFeedbackMsg({ type: 'error', text: 'Failed to reset status. Please try again.' });
     } finally {
       setIsUpdating(false);
     }
@@ -190,31 +211,34 @@ export default function DoctorDashboard() {
   };
 
   // Filtering Logic
-  const filteredAppointments = appointments.filter((apt) => {
-    const query = searchQuery.toLowerCase().trim();
-    const matchesSearch =
-      !query ||
-      apt.patientName?.toLowerCase().includes(query) ||
-      apt.patientPhone?.includes(query) ||
-      apt.id?.toLowerCase().includes(query);
+  const filteredAppointments = useMemo(() => {
+    return appointments.filter((apt) => {
+      const query = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        apt.patientName?.toLowerCase().includes(query) ||
+        apt.patientPhone?.includes(query) ||
+        apt.reason?.toLowerCase().includes(query) ||
+        apt.id?.toLowerCase().includes(query);
 
-    if (!matchesSearch) return false;
+      if (!matchesSearch) return false;
 
-    if (activeTab === 'today') {
-      return apt.preferredDate === todayStr || apt.confirmedDate === todayStr;
-    } else if (activeTab === 'action') {
-      return isPendingStatus(apt.status);
-    } else if (activeTab === 'history') {
-      return isConfirmedStatus(apt.status) || (apt.status || '').toUpperCase() === 'CANCELLED';
-    }
-    return true;
-  });
+      if (activeTab === 'today') {
+        return apt.preferredDate === todayStr || apt.confirmedDate === todayStr;
+      } else if (activeTab === 'action') {
+        return isPendingStatus(apt.status);
+      } else if (activeTab === 'history') {
+        return isConfirmedStatus(apt.status) || (apt.status || '').toUpperCase() === 'CANCELLED';
+      }
+      return true;
+    });
+  }, [appointments, searchQuery, activeTab, todayStr]);
 
   // Calculate Metrics
-  const todayCount = appointments.filter((a) => a.preferredDate === todayStr || a.confirmedDate === todayStr).length;
-  const actionCount = appointments.filter((a) => isPendingStatus(a.status)).length;
-  const historyCount = appointments.filter((a) => isConfirmedStatus(a.status) || (a.status || '').toUpperCase() === 'CANCELLED').length;
-  const totalConfirmed = appointments.filter((a) => isConfirmedStatus(a.status)).length;
+  const todayCount = useMemo(() => appointments.filter((a) => a.preferredDate === todayStr || a.confirmedDate === todayStr).length, [appointments, todayStr]);
+  const actionCount = useMemo(() => appointments.filter((a) => isPendingStatus(a.status)).length, [appointments]);
+  const historyCount = useMemo(() => appointments.filter((a) => isConfirmedStatus(a.status) || (a.status || '').toUpperCase() === 'CANCELLED').length, [appointments]);
+  const totalConfirmed = useMemo(() => appointments.filter((a) => isConfirmedStatus(a.status)).length, [appointments]);
 
   if (!isAuthenticated) {
     return (
@@ -224,7 +248,7 @@ export default function DoctorDashboard() {
             <span className="text-xs font-bold text-rose-500 uppercase tracking-widest">Clinical Desk Access</span>
             <h2 className="text-2xl font-black text-white">Dr. Santhoshi Portal</h2>
           </div>
-          {error && <p className="text-xs text-red-400 bg-red-950/50 p-3 rounded-xl border border-red-800 text-center font-medium">{error}</p>}
+          {loginError && <p className="text-xs text-red-400 bg-red-950/50 p-3 rounded-xl border border-red-800 text-center font-medium">{loginError}</p>}
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mobile Number</label>
             <input
@@ -290,9 +314,22 @@ export default function DoctorDashboard() {
 
       <main className="max-w-6xl mx-auto space-y-6">
         
+        {/* Feedback Alert Banner */}
+        {feedbackMsg && (
+          <div
+            className={`p-4 rounded-2xl border text-xs font-semibold flex justify-between items-center ${
+              feedbackMsg.type === 'success'
+                ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
+                : 'bg-rose-950/60 border-rose-800 text-rose-300'
+            }`}
+          >
+            <span>{feedbackMsg.text}</span>
+            <button onClick={() => setFeedbackMsg(null)} className="font-bold text-sm ml-4">✕</button>
+          </div>
+        )}
+
         {/* Navigation Tabs */}
         <div className="flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center bg-slate-900 p-3 rounded-2xl border border-slate-800">
-          
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setActiveTab('today')}
@@ -380,7 +417,6 @@ export default function DoctorDashboard() {
               )}
             </div>
           )}
-
         </div>
 
         {/* MONTHLY DASHBOARD */}
@@ -555,7 +591,7 @@ export default function DoctorDashboard() {
                 <p className="text-xs text-slate-400 mt-0.5">Patient: {confirmingApt.patientName}</p>
               </div>
               <button
-                onClick={() => setConfirmingApt(null)}
+                onClick={closeModal}
                 className="text-slate-400 hover:text-white font-bold text-lg"
               >
                 ✕
@@ -675,7 +711,7 @@ export default function DoctorDashboard() {
                 {isUpdating ? 'Saving...' : `Confirm Booking (${selectedExactSlot || 'Select Slot'})`}
               </button>
               <button
-                onClick={() => setConfirmingApt(null)}
+                onClick={closeModal}
                 className="px-5 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all"
               >
                 Cancel
