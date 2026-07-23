@@ -1,6 +1,18 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+// Helper to derive Enum value for slotWindow
+function getSlotWindowEnum(slot: string): 'MORNING' | 'AFTERNOON' | 'EVENING' {
+  const lower = (slot || '').toLowerCase();
+  if (lower.includes('09:00') || lower.includes('11:00') || lower.includes('am')) {
+    return 'MORNING';
+  }
+  if (lower.includes('02:00') || lower.includes('04:00') || lower.includes('pm')) {
+    return 'AFTERNOON';
+  }
+  return 'EVENING';
+}
+
 export async function GET() {
   try {
     const rawAppointments = await (db as any).appointment.findMany({
@@ -13,7 +25,7 @@ export async function GET() {
       patientPhone: apt.patientPhone || apt.patient_phone || 'N/A',
       reason: apt.reason || 'Consultation',
       preferredDate: apt.preferredDate || (apt.requestedDate ? new Date(apt.requestedDate).toISOString().split('T')[0] : ''),
-      preferredTimeSlot: apt.preferredTimeSlot || apt.preferred_time_slot || '',
+      preferredTimeSlot: apt.preferredTimeSlot || apt.preferred_time_slot || apt.slotWindow || '',
       status: apt.status || 'PENDING',
       confirmedSlot: apt.confirmedSlot || apt.confirmed_slot || null,
       confirmedDate: apt.confirmedDate || apt.confirmed_date || null,
@@ -50,10 +62,15 @@ export async function POST(request: Request) {
       preferredTimeSlot,
       preferred_time_slot,
       status,
+      slotWindow,
     } = body;
 
     const dateStr = preferredDate || preferred_date || new Date().toISOString().split('T')[0];
     const parsedDateTime = new Date(dateStr);
+    const validRequestedDate = isNaN(parsedDateTime.getTime()) ? new Date() : parsedDateTime;
+
+    const rawSlot = preferredTimeSlot || preferred_time_slot || '';
+    const mappedSlotWindow = slotWindow || getSlotWindowEnum(rawSlot);
 
     const newAppointment = await (db as any).appointment.create({
       data: {
@@ -61,8 +78,9 @@ export async function POST(request: Request) {
         patientPhone: patientPhone || patient_phone || 'N/A',
         reason: reason || 'Consultation',
         preferredDate: dateStr,
-        requestedDate: isNaN(parsedDateTime.getTime()) ? new Date() : parsedDateTime,
-        preferredTimeSlot: preferredTimeSlot || preferred_time_slot || '',
+        requestedDate: validRequestedDate,
+        preferredTimeSlot: rawSlot,
+        slotWindow: mappedSlotWindow,
         status: status || 'PENDING',
       },
     });
