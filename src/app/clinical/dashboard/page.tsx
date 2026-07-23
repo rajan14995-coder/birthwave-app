@@ -8,6 +8,10 @@ export default function DoctorDashboard() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [appointments, setAppointments] = useState<any[]>([]);
+  
+  // Tab State & Search
+  const [activeTab, setActiveTab] = useState<'action' | 'history' | 'all'>('action');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const envMobile = process.env.NEXT_PUBLIC_DOCTOR_MOBILE || '9876543210';
   const envPassword = process.env.NEXT_PUBLIC_DOCTOR_PASSWORD || 'doctor@123';
@@ -21,34 +25,9 @@ export default function DoctorDashboard() {
   }, []);
 
   const loadAppointments = () => {
+    // Load strictly from user/patient entries in localStorage
     const saved = JSON.parse(localStorage.getItem('bw_appointments') || '[]');
-    
-    // Default fallback demo data ONLY if storage is completely empty
-    const demoData = [
-      {
-        id: 'BW-849201',
-        patientName: 'Ananya Sharma',
-        patientPhone: '9876543210',
-        reason: 'Prenatal Checkup',
-        preferredDate: '2026-08-01',
-        preferredTimeSlot: '09:00 AM - 11:00 AM',
-        status: 'Confirmed',
-        assignedTime: '10:15 AM',
-        summary: 'Low Risk | Week 8 Pregnancy | Normal vitals',
-      },
-      {
-        id: 'BW-992381',
-        patientName: 'Priyanka Verma',
-        patientPhone: '9123456789',
-        reason: 'Fertility Assessment',
-        preferredDate: '2026-08-02',
-        preferredTimeSlot: '11:00 AM - 01:00 PM',
-        status: 'Pending Confirmation',
-        summary: 'Moderate Priority | Irregular Cycle | Needs Hormone Evaluation',
-      },
-    ];
-
-    setAppointments(saved.length > 0 ? saved : demoData);
+    setAppointments(saved);
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -75,6 +54,27 @@ export default function DoctorDashboard() {
     localStorage.removeItem('bw_doctor_auth');
     setIsAuthenticated(false);
   };
+
+  // Filter Logic: Search + Tabs
+  const filteredAppointments = appointments.filter((apt) => {
+    // Search Query Filter
+    const query = searchQuery.toLowerCase().trim();
+    const matchesSearch =
+      !query ||
+      apt.patientName?.toLowerCase().includes(query) ||
+      apt.patientPhone?.includes(query) ||
+      apt.id?.toLowerCase().includes(query);
+
+    if (!matchesSearch) return false;
+
+    // Tab Filter
+    if (activeTab === 'action') {
+      return apt.status === 'Pending Confirmation';
+    } else if (activeTab === 'history') {
+      return apt.status === 'Confirmed' || apt.status === 'Cancelled';
+    }
+    return true; // 'all' tab
+  });
 
   if (!isAuthenticated) {
     return (
@@ -120,16 +120,19 @@ export default function DoctorDashboard() {
     );
   }
 
+  const actionCount = appointments.filter((a) => a.status === 'Pending Confirmation').length;
+  const historyCount = appointments.filter((a) => a.status === 'Confirmed' || a.status === 'Cancelled').length;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 font-sans">
       
-      {/* Top Bar */}
+      {/* Top Header */}
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-6 mb-8 gap-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-black text-white">Dr. Santhoshi Clinical Desk</h1>
             <span className="px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold uppercase">
-              Live Patient Queue
+              Live Operations
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">BirthWave Specialist Operations & Request Approvals</p>
@@ -138,7 +141,7 @@ export default function DoctorDashboard() {
         <div className="flex items-center gap-3">
           <button
             onClick={loadAppointments}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 transition-all"
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 transition-all border border-slate-700"
           >
             🔄 Refresh Queue
           </button>
@@ -151,64 +154,154 @@ export default function DoctorDashboard() {
         </div>
       </header>
 
-      {/* Main Queue List */}
-      <main className="max-w-6xl mx-auto space-y-4">
-        <h2 className="text-sm font-bold text-rose-400 uppercase tracking-wider">
-          Active Patient Requests ({appointments.length})
-        </h2>
+      {/* Main Container */}
+      <main className="max-w-6xl mx-auto space-y-6">
+        
+        {/* Navigation Tabs & Search Controls */}
+        <div className="flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center bg-slate-900 p-3 rounded-2xl border border-slate-800">
+          
+          {/* Tabs */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('action')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'action'
+                  ? 'bg-rose-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              ⚠️ Action Needed
+              <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'action' ? 'bg-rose-800 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                {actionCount}
+              </span>
+            </button>
 
-        {appointments.map((apt: any) => (
-          <div key={apt.id} className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl flex flex-col md:flex-row justify-between md:items-center gap-6">
-            
-            <div className="space-y-2 max-w-xl">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-mono font-bold text-rose-400 bg-rose-950/60 px-2.5 py-1 rounded-lg border border-rose-900">
-                  {apt.id}
-                </span>
-                <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                  apt.status === 'Confirmed'
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                    : 'bg-amber-950 text-amber-400 border border-amber-800'
-                }`}>
-                  {apt.status}
-                </span>
-              </div>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'history'
+                  ? 'bg-rose-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              📜 History of Appointments
+              <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'history' ? 'bg-rose-800 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                {historyCount}
+              </span>
+            </button>
 
-              <h3 className="text-xl font-bold text-white">{apt.patientName}</h3>
-              
-              <div className="text-xs text-slate-400 space-y-1">
-                <p><span className="text-slate-500 font-semibold">Phone:</span> +91 {apt.patientPhone} | <span className="text-slate-500 font-semibold">Reason:</span> <span className="text-rose-300 font-bold">{apt.reason}</span></p>
-                <p><span className="text-slate-500 font-semibold">Requested Window:</span> {apt.preferredDate} ({apt.preferredTimeSlot || 'Morning Slot'})</p>
-              </div>
-
-              {apt.summary && (
-                <div className="mt-2 p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 font-medium">
-                  🩺 <span className="text-slate-400 font-bold">AI Pre-Assessment:</span> {apt.summary}
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex flex-wrap sm:flex-nowrap gap-3 shrink-0">
-              {apt.status !== 'Confirmed' ? (
-                <button
-                  onClick={() => handleStatusUpdate(apt.id, 'Confirmed')}
-                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all"
-                >
-                  Confirm Slot ✓
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleStatusUpdate(apt.id, 'Pending Confirmation')}
-                  className="px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all"
-                >
-                  Mark Pending
-                </button>
-              )}
-            </div>
-
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'all'
+                  ? 'bg-rose-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              All ({appointments.length})
+            </button>
           </div>
-        ))}
+
+          {/* Search Input Box */}
+          <div className="relative w-full md:w-72">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name, phone, or ID..."
+              className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+            />
+            <span className="absolute left-3 top-3 text-xs text-slate-500">🔍</span>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-white font-bold"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+        </div>
+
+        {/* Appointment Cards List */}
+        <div className="space-y-4">
+          {filteredAppointments.length === 0 ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-3">
+              <span className="text-3xl">📋</span>
+              <h3 className="text-base font-bold text-slate-300">No Appointments Found</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                {searchQuery
+                  ? `No records match "${searchQuery}". Try a different search.`
+                  : activeTab === 'action'
+                  ? 'There are currently no pending appointment requests requiring action.'
+                  : 'No confirmed or cancelled appointment history available yet.'}
+              </p>
+            </div>
+          ) : (
+            filteredAppointments.map((apt: any) => (
+              <div
+                key={apt.id}
+                className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl flex flex-col md:flex-row justify-between md:items-center gap-6 hover:border-slate-700 transition-all"
+              >
+                <div className="space-y-2.5 max-w-xl">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono font-bold text-rose-400 bg-rose-950/60 px-2.5 py-1 rounded-lg border border-rose-900">
+                      {apt.id}
+                    </span>
+                    <span
+                      className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        apt.status === 'Confirmed'
+                          ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                          : apt.status === 'Cancelled'
+                          ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                          : 'bg-amber-950 text-amber-400 border border-amber-800'
+                      }`}
+                    >
+                      {apt.status}
+                    </span>
+                  </div>
+
+                  <h3 className="text-xl font-bold text-white">{apt.patientName}</h3>
+
+                  <div className="text-xs text-slate-400 space-y-1">
+                    <p>
+                      <span className="text-slate-500 font-semibold">Phone:</span> +91 {apt.patientPhone} |{' '}
+                      <span className="text-slate-500 font-semibold">Reason:</span>{' '}
+                      <span className="text-rose-300 font-bold">{apt.reason}</span>
+                    </p>
+                    <p>
+                      <span className="text-slate-500 font-semibold">Requested Slot:</span>{' '}
+                      {apt.preferredDate} ({apt.preferredTimeSlot || 'Standard Slot'})
+                    </p>
+                  </div>
+                </div>
+
+                {/* Status Controls */}
+                <div className="flex items-center gap-3 shrink-0">
+                  {apt.status === 'Pending Confirmation' && (
+                    <button
+                      onClick={() => handleStatusUpdate(apt.id, 'Confirmed')}
+                      className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all"
+                    >
+                      Confirm Slot ✓
+                    </button>
+                  )}
+
+                  {apt.status === 'Confirmed' && (
+                    <button
+                      onClick={() => handleStatusUpdate(apt.id, 'Pending Confirmation')}
+                      className="px-4 py-2.5 rounded-xl bg-amber-950 hover:bg-amber-900 text-amber-300 border border-amber-800 font-bold text-xs transition-all"
+                    >
+                      Move Back to Pending
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
       </main>
 
     </div>
