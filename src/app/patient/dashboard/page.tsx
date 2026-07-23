@@ -1,62 +1,62 @@
 'use client';
 
-import React, { useState } from 'react';
-import PatientAuthModal from '@/components/patient/PatientAuthModal';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import BookingModal from '@/components/patient/BookingModal';
 import AppointmentHistory from '@/components/patient/AppointmentHistory';
 import FertilityAssessmentQuiz from '@/components/patient/FertilityAssessmentQuiz';
 
 export default function PatientDashboard() {
+  const router = useRouter();
   const [patient, setPatient] = useState<{ name: string; phone: string } | null>(null);
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [isQuizOpen, setIsQuizOpen] = useState(false);
-
-  // Initial state is empty (no phantom dummy records)
   const [appointments, setAppointments] = useState<any[]>([]);
 
-  const handleLoginSuccess = (data: { name: string; phone: string }) => {
-    setPatient(data);
+  useEffect(() => {
+    const savedPatient = localStorage.getItem('bw_patient');
+    if (!savedPatient) {
+      // IF NOT LOGGED IN -> HARD REDIRECT TO LOGIN SCREEN IMMEDIATELY
+      router.replace('/patient/login');
+    } else {
+      const parsed = JSON.parse(savedPatient);
+      setPatient(parsed);
+      loadPatientAppointments(parsed.phone);
+      setLoading(false);
+    }
+  }, [router]);
+
+  const loadPatientAppointments = (phone: string) => {
+    const allApps = JSON.parse(localStorage.getItem('bw_appointments') || '[]');
+    const myApps = allApps.filter((app: any) => app.patientPhone === phone);
+    setAppointments(myApps);
   };
 
-  const handleBookClick = () => {
-    if (!patient) {
-      setIsAuthOpen(true);
-    } else {
-      setIsBookingOpen(true);
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('bw_patient');
+    router.replace('/patient/login');
   };
 
   const handleBookingSuccess = (newAppointment: any) => {
-    setAppointments([newAppointment, ...appointments]);
+    const allApps = JSON.parse(localStorage.getItem('bw_appointments') || '[]');
+    const updated = [newAppointment, ...allApps];
+    localStorage.setItem('bw_appointments', JSON.stringify(updated));
+    if (patient) loadPatientAppointments(patient.phone);
   };
 
-  const handleAcceptSuggestion = (id: string) => {
-    setAppointments(
-      appointments.map((apt) =>
-        apt.id === id
-          ? {
-              ...apt,
-              status: 'Confirmed',
-              exactTime: apt.suggestedTime || apt.preferredTimeSlot,
-            }
-          : apt
-      )
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-rose-500 font-bold text-sm">
+        Verifying Session...
+      </div>
     );
-  };
-
-  const handleCancelAppointment = (id: string) => {
-    setAppointments(
-      appointments.map((apt) =>
-        apt.id === id ? { ...apt, status: 'Cancelled' } : apt
-      )
-    );
-  };
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-rose-50/50 via-white to-gray-50 text-gray-900 font-sans pb-20">
       
-      {/* Top Header */}
+      {/* Header */}
       <header className="bg-white border-b border-rose-100 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2">
@@ -68,72 +68,60 @@ export default function PatientDashboard() {
             </span>
           </a>
 
-          <div className="flex items-center gap-4">
-            {patient ? (
-              <div className="flex items-center gap-3 bg-rose-50 px-4 py-2 rounded-2xl border border-rose-200">
-                <span className="w-8 h-8 rounded-full bg-rose-600 text-white font-bold flex items-center justify-center text-xs">
-                  {patient.name.charAt(0).toUpperCase()}
-                </span>
-                <div className="text-left hidden sm:block">
-                  <p className="text-xs font-bold text-gray-900">{patient.name}</p>
-                  <p className="text-[10px] text-rose-600 font-medium">{patient.phone}</p>
-                </div>
-                <button
-                  onClick={() => setPatient(null)}
-                  className="text-xs text-gray-400 hover:text-rose-600 ml-2 font-bold"
-                >
-                  Logout
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setIsAuthOpen(true)}
-                className="px-5 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition-all"
-              >
-                Login / Register
-              </button>
-            )}
+          <div className="flex items-center gap-3 bg-rose-50 px-4 py-2 rounded-2xl border border-rose-200">
+            <span className="w-8 h-8 rounded-full bg-rose-600 text-white font-bold flex items-center justify-center text-xs">
+              {patient?.name.charAt(0).toUpperCase()}
+            </span>
+            <div className="text-left hidden sm:block">
+              <p className="text-xs font-bold text-gray-900">{patient?.name}</p>
+              <p className="text-[10px] text-rose-600 font-medium">{patient?.phone}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="text-xs text-gray-400 hover:text-rose-600 ml-2 font-bold"
+            >
+              Logout
+            </button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* Main Authenticated Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
         
-        {/* Banner Section */}
-        <div className="mb-10 bg-gradient-to-r from-rose-900 via-rose-800 to-purple-900 rounded-3xl p-8 sm:p-10 text-white shadow-xl relative overflow-hidden">
-          <div className="relative z-10 max-w-2xl space-y-3">
+        {/* Banner */}
+        <div className="mb-10 bg-gradient-to-r from-rose-900 via-rose-800 to-purple-900 rounded-3xl p-8 sm:p-10 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="space-y-2 max-w-xl">
             <span className="px-3 py-1 rounded-full bg-white/20 text-rose-100 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
-              Patient Portal
+              Patient Portal Active
             </span>
             <h1 className="text-2xl sm:text-4xl font-black">
-              {patient ? `Welcome back, ${patient.name}!` : 'Your Health & Care Dashboard'}
+              Welcome, {patient?.name}!
             </h1>
             <p className="text-rose-100 text-xs sm:text-sm leading-relaxed">
-              Schedule visits with Dr. Santhoshi, review assessment reports, and manage consultation passes seamlessly.
+              Manage your care with Dr. Santhoshi, review assessment reports, and book appointments.
             </p>
-            <div className="pt-2 flex flex-wrap gap-3">
-              <button
-                onClick={handleBookClick}
-                className="px-6 py-3 rounded-xl bg-white text-rose-900 font-bold text-xs shadow-md hover:bg-rose-50 transition-all"
-              >
-                + Book New Appointment
-              </button>
-            </div>
           </div>
+
+          <button
+            onClick={() => setIsBookingOpen(true)}
+            className="px-6 py-3.5 rounded-xl bg-white text-rose-900 font-bold text-xs shadow-md hover:bg-rose-50 transition-all shrink-0"
+          >
+            + Book New Appointment
+          </button>
         </div>
 
-        {/* AI Fertility Assessment Highlight Card */}
+        {/* AI Fertility Assessment & Health Tools inside Dashboard */}
         <div className="mb-12 bg-gradient-to-r from-rose-500 to-purple-600 rounded-3xl p-8 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
             <span className="px-3 py-1 rounded-full bg-white/20 text-xs font-bold uppercase tracking-wider">
-              AI Diagnostic Tool
+              Diagnostic & Wellness
             </span>
             <h3 className="text-xl sm:text-2xl font-bold">
-              Dr. Santhoshi AI Fertility & Wellness Assessment
+              Dr. Santhoshi AI Fertility & Health Assessment
             </h3>
             <p className="text-xs sm:text-sm text-rose-100">
-              Complete a 2-minute clinical questionnaire to generate custom health insights prior to your appointment.
+              Complete the questionnaire to generate personalized clinical health insights.
             </p>
           </div>
           <button
@@ -144,22 +132,16 @@ export default function PatientDashboard() {
           </button>
         </div>
 
-        {/* Appointment History List */}
+        {/* Patient Appointment History */}
         <AppointmentHistory
           appointments={appointments}
-          onAcceptSuggestion={handleAcceptSuggestion}
-          onCancelAppointment={handleCancelAppointment}
+          onAcceptSuggestion={() => {}}
+          onCancelAppointment={() => {}}
         />
 
       </main>
 
-      {/* Modals */}
-      <PatientAuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        onLoginSuccess={handleLoginSuccess}
-      />
-
+      {/* Booking Modal */}
       <BookingModal
         isOpen={isBookingOpen}
         onClose={() => setIsBookingOpen(false)}
@@ -167,11 +149,12 @@ export default function PatientDashboard() {
         onBookingSuccess={handleBookingSuccess}
       />
 
+      {/* Assessment Modal */}
       {isQuizOpen && (
         <FertilityAssessmentQuiz
           onBookAppointment={() => {
             setIsQuizOpen(false);
-            handleBookClick();
+            setIsBookingOpen(true);
           }}
         />
       )}
