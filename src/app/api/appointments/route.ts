@@ -3,23 +3,21 @@ import { db } from '@/lib/db';
 
 export async function GET() {
   try {
-    // Fetch all records ordered by creation date
     const rawAppointments = await (db as any).appointment.findMany({
       orderBy: { createdAt: 'desc' },
     });
 
-    // Map database fields to support both snake_case and camelCase formats
     const appointments = rawAppointments.map((apt: any) => ({
       id: apt.id || apt.booking_id || apt.bookingId,
-      patientName: apt.patient_name || apt.patientName || apt.name || 'Patient',
-      patientPhone: apt.patient_phone || apt.patientPhone || apt.phone || 'N/A',
+      patientName: apt.patientName || apt.patient_name || apt.name || 'Patient',
+      patientPhone: apt.patientPhone || apt.patient_phone || apt.phone || 'N/A',
       reason: apt.reason || apt.service || 'Consultation',
-      preferredDate: apt.preferred_date || apt.preferredDate || apt.date || '',
-      preferredTimeSlot: apt.preferred_time_slot || apt.preferredTimeSlot || apt.time_slot || apt.slot || '',
-      status: apt.status || 'Pending Confirmation',
-      confirmedSlot: apt.confirmed_slot || apt.confirmedSlot || null,
-      confirmedDate: apt.confirmed_date || apt.confirmedDate || null,
-      createdAt: apt.created_at || apt.createdAt,
+      preferredDate: apt.preferredDate || apt.preferred_date || apt.date || '',
+      preferredTimeSlot: apt.preferredTimeSlot || apt.preferred_time_slot || apt.time_slot || apt.slot || '',
+      status: apt.status || 'PENDING',
+      confirmedSlot: apt.confirmedSlot || apt.confirmed_slot || null,
+      confirmedDate: apt.confirmedDate || apt.confirmed_date || null,
+      createdAt: apt.createdAt || apt.created_at,
     }));
 
     return NextResponse.json(appointments, {
@@ -54,18 +52,17 @@ export async function POST(request: Request) {
       status,
     } = body;
 
-    // Generate custom booking ID format: BW-XXXXXX
     const customId = `BW-${Math.floor(100000 + Math.random() * 900000)}`;
 
     const newAppointment = await (db as any).appointment.create({
       data: {
         id: customId,
-        patient_name: patient_name || patientName || 'Patient',
-        patient_phone: patient_phone || patientPhone || 'N/A',
+        patientName: patientName || patient_name || 'Patient',
+        patientPhone: patientPhone || patient_phone || 'N/A',
         reason: reason || 'Consultation',
-        preferred_date: preferred_date || preferredDate || '',
-        preferred_time_slot: preferred_time_slot || preferredTimeSlot || '',
-        status: status || 'Pending Confirmation',
+        preferredDate: preferredDate || preferred_date || '',
+        preferredTimeSlot: preferredTimeSlot || preferred_time_slot || '',
+        status: status || 'PENDING',
       },
     });
 
@@ -92,8 +89,8 @@ export async function PUT(request: Request) {
       where: { id },
       data: {
         status: status,
-        confirmed_slot: confirmed_slot || confirmedSlot || null,
-        confirmed_date: confirmed_date || confirmedDate || null,
+        confirmedSlot: confirmedSlot || confirmed_slot || null,
+        confirmedDate: confirmedDate || confirmed_date || null,
       },
     });
 
