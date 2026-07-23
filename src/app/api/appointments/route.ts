@@ -1,81 +1,107 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
-import { createAppointmentSchema } from "@/lib/validation";
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/db'; // Ensure this points to your Prisma / Supabase DB instance
 
-export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "PATIENT") {
-    return NextResponse.json({ error: "Please log in as a patient to book an appointment." }, { status: 401 });
+export async function GET() {
+  try {
+    // Fetch all records ordered by creation date
+    const rawAppointments = await db.appointment.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Map database fields to normalize snake_case and camelCase formats
+    const appointments = rawAppointments.map((apt: any) => ({
+      id: apt.id || apt.booking_id || apt.bookingId,
+      patientName: apt.patientName || apt.patient_name || apt.name || 'Patient',
+      patientPhone: apt.patientPhone || apt.patient_phone || apt.phone || 'N/A',
+      reason: apt.reason || apt.service || 'Consultation',
+      preferredDate: apt.preferredDate || apt.preferred_date || apt.date || '',
+      preferredTimeSlot: apt.preferredTimeSlot || apt.preferred_time_slot || apt.time_slot || apt.slot || '',
+      status: apt.status || 'Pending Confirmation',
+      confirmedSlot: apt.confirmedSlot || apt.confirmed_slot || null,
+      confirmedDate: apt.confirmedDate || apt.confirmed_date || null,
+      createdAt: apt.createdAt || apt.created_at,
+    }));
+
+    return NextResponse.json(appointments, {
+      status: 200,
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching appointments:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch appointments' },
+      { status: 500 }
+    );
   }
-
-  const body = await req.json();
-  const parsed = createAppointmentSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid request", details: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const service = await prisma.service.findUnique({ where: { id: parsed.data.serviceId } });
-  if (!service || !service.active) {
-    return NextResponse.json({ error: "Selected service is not available." }, { status: 400 });
-  }
-
-  const requestedDate = new Date(parsed.data.requestedDate);
-  if (requestedDate < new Date(new Date().toDateString())) {
-    return NextResponse.json({ error: "Cannot book a date in the past." }, { status: 400 });
-  }
-
-  const appointment = await prisma.appointment.create({
-    data: {
-      patientId: session.sub,
-      serviceId: parsed.data.serviceId,
-      requestedDate,
-      slotWindow: parsed.data.slotWindow,
-      notes: parsed.data.notes,
-      status: "PENDING",
-    },
-    include: { service: true },
-  });
-
-  return NextResponse.json({ success: true, appointment }, { status: 201 });
 }
 
-export async function GET(req: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
 
-  const { searchParams } = new URL(req.url);
-  const status = searchParams.get("status") ?? undefined;
-  const dateFrom = searchParams.get("dateFrom") ?? undefined;
-  const dateTo = searchParams.get("dateTo") ?? undefined;
-  const searchPhone = searchParams.get("phone") ?? undefined;
+    const {
+      patientName,
+      patient_name,
+      patientPhone,
+      patient_phone,
+      reason,
+      preferredDate,
+      preferred_date,
+      preferredTimeSlot,
+      preferred_time_slot,
+    } = body;
 
-  if (session.role === "PATIENT") {
-    const appointments = await prisma.appointment.findMany({
-      where: { patientId: session.sub, ...(status ? { status: status as any } : {}) },
-      include: { service: true },
-      orderBy: { requestedDate: "desc" },
+    // Generate custom booking ID format: BW-XXXXXX
+    const customId = `BW-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const newAppointment = await db.appointment.create({
+      data: {
+        id: customId,
+        patientName: patientName || patient_name,
+        patientPhone: patientPhone || patient_phone,
+        reason: reason || 'Consultation',
+        preferredDate: preferredDate || preferred_date,
+        preferredTimeSlot: preferredTimeSlot || preferred_time_slot,
+        status: 'Pending Confirmation',
+      },
     });
-    return NextResponse.json({ appointments });
+
+    return NextResponse.json(newAppointment, { status: 201 });
+  } catch (error) {
+    console.error('Error creating appointment:', error);
+    return NextResponse.json(
+      { error: 'Failed to create appointment' },
+      { status: 500 }
+    );
   }
+}
 
-  // STAFF: full queue view, filterable
-  const appointments = await prisma.appointment.findMany({
-    where: {
-      ...(status ? { status: status as any } : {}),
-      ...(dateFrom || dateTo
-        ? {
-            requestedDate: {
-              ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
-              ...(dateTo ? { lte: new Date(dateTo) } : {}),
-            },
-          }
-        : {}),
-      ...(searchPhone ? { patient: { phone: { contains: searchPhone } } } : {}),
-    },
-    include: { service: true, patient: { select: { id: true, phone: true, name: true } } },
-    orderBy: [{ status: "asc" }, { requestedDate: "asc" }],
-  });
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, status, confirmedSlot, confirmedDate } = body;
 
-  return NextResponse.json({ appointments });
+    if (!id) {
+      return NextResponse.json({ error: 'Missing appointment ID' }, { status: 400 });
+    }
+
+    const updated = await db.appointment.update({
+      where: { id },
+      data: {
+        status,
+        confirmedSlot: confirmedSlot || null,
+        confirmedDate: confirmedDate || null,
+      },
+    });
+
+    return NextResponse.json(updated, { status: 200 });
+  } catch (error) {
+    console.error('Error updating appointment:', error);
+    return NextResponse.json(
+      { error: 'Failed to update appointment' },
+      { status: 500 }
+    );
+  }
 }
