@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-function getSlotWindowEnum(slot: string): 'MORNING' | 'AFTERNOON' | 'EVENING' {
+function getSlotWindowEnum(slot: string): 'MORNING' | 'EVENING' {
   const lower = (slot || '').toLowerCase();
-  if (lower.includes('09:00') || lower.includes('11:00') || lower.includes('am')) {
+  if (lower.includes('09:00') || lower.includes('11:00') || lower.includes('am') || lower.includes('morning')) {
     return 'MORNING';
   }
-  if (lower.includes('02:00') || lower.includes('04:00') || lower.includes('pm')) {
-    return 'AFTERNOON';
-  }
+  // Maps afternoon/evening to EVENING since schema only has MORNING and EVENING
   return 'EVENING';
 }
 
@@ -145,16 +143,16 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Missing appointment ID' }, { status: 400 });
     }
 
-    // Map incoming status values to valid Prisma AppointmentStatus Enum values
+    // Map UI actions to valid AppointmentStatus Enum: 'APPROVED', 'DECLINED', 'CANCELLED', 'COMPLETED', etc.
     let validStatus = status;
-    if (status === 'CONFIRMED' || status === 'APPROVED') {
-      validStatus = 'SCHEDULED'; // Fallback to 'SCHEDULED' matching standard Prisma schema enums
+    if (status === 'CONFIRMED' || status === 'SCHEDULED' || status === 'APPROVED') {
+      validStatus = 'APPROVED';
     }
 
     const updated = await (db as any).appointment.update({
       where: { id },
       data: {
-        status: validStatus || 'SCHEDULED',
+        status: validStatus || 'APPROVED',
         proposedSlotWindow: confirmedSlot ? getSlotWindowEnum(confirmedSlot) : undefined,
         proposedDate: confirmedDate ? new Date(confirmedDate) : undefined,
       },
