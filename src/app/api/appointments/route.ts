@@ -12,7 +12,7 @@ export async function GET() {
       patientName: apt.patientName || apt.patient_name || 'Patient',
       patientPhone: apt.patientPhone || apt.patient_phone || 'N/A',
       reason: apt.reason || 'Consultation',
-      preferredDate: apt.preferredDate || apt.preferred_date || '',
+      preferredDate: apt.preferredDate || (apt.requestedDate ? new Date(apt.requestedDate).toISOString().split('T')[0] : ''),
       preferredTimeSlot: apt.preferredTimeSlot || apt.preferred_time_slot || '',
       status: apt.status || 'PENDING',
       confirmedSlot: apt.confirmedSlot || apt.confirmed_slot || null,
@@ -52,13 +52,16 @@ export async function POST(request: Request) {
       status,
     } = body;
 
-    // Use camelCase to match Prisma schema definition cleanly
+    const dateStr = preferredDate || preferred_date || new Date().toISOString().split('T')[0];
+    const parsedDateTime = new Date(dateStr);
+
     const newAppointment = await (db as any).appointment.create({
       data: {
         patientName: patientName || patient_name || 'Patient',
         patientPhone: patientPhone || patient_phone || 'N/A',
         reason: reason || 'Consultation',
-        preferredDate: preferredDate || preferred_date || '',
+        preferredDate: dateStr,
+        requestedDate: isNaN(parsedDateTime.getTime()) ? new Date() : parsedDateTime,
         preferredTimeSlot: preferredTimeSlot || preferred_time_slot || '',
         status: status || 'PENDING',
       },
