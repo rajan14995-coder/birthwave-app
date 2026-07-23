@@ -145,13 +145,16 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Missing appointment ID' }, { status: 400 });
     }
 
-    // Ensure status maps correctly to AppointmentStatus Enum
-    const validStatus = status === 'APPROVED' || status === 'CONFIRMED' ? 'CONFIRMED' : status || 'CONFIRMED';
+    // Map incoming status values to valid Prisma AppointmentStatus Enum values
+    let validStatus = status;
+    if (status === 'CONFIRMED' || status === 'APPROVED') {
+      validStatus = 'SCHEDULED'; // Fallback to 'SCHEDULED' matching standard Prisma schema enums
+    }
 
     const updated = await (db as any).appointment.update({
       where: { id },
       data: {
-        status: validStatus,
+        status: validStatus || 'SCHEDULED',
         proposedSlotWindow: confirmedSlot ? getSlotWindowEnum(confirmedSlot) : undefined,
         proposedDate: confirmedDate ? new Date(confirmedDate) : undefined,
       },
