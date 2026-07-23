@@ -54,23 +54,48 @@ export async function POST(request: Request) {
 
     const customId = `BW-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    const newAppointment = await (db as any).appointment.create({
-      data: {
-        id: customId,
-        patientName: patientName || patient_name || 'Patient',
-        patientPhone: patientPhone || patient_phone || 'N/A',
-        reason: reason || 'Consultation',
-        preferredDate: preferredDate || preferred_date || '',
-        preferredTimeSlot: preferredTimeSlot || preferred_time_slot || '',
-        status: status || 'PENDING',
-      },
-    });
+    const pName = patientName || patient_name || 'Patient';
+    const pPhone = patientPhone || patient_phone || 'N/A';
+    const pReason = reason || 'Consultation';
+    const pDate = preferredDate || preferred_date || '';
+    const pSlot = preferredTimeSlot || preferred_time_slot || '';
+    const pStatus = status || 'PENDING';
+
+    let newAppointment;
+
+    // First attempt: camelCase schema fields
+    try {
+      newAppointment = await (db as any).appointment.create({
+        data: {
+          id: customId,
+          patientName: pName,
+          patientPhone: pPhone,
+          reason: pReason,
+          preferredDate: pDate,
+          preferredTimeSlot: pSlot,
+          status: pStatus,
+        },
+      });
+    } catch (dbErr) {
+      // Fallback attempt: snake_case schema fields
+      newAppointment = await (db as any).appointment.create({
+        data: {
+          id: customId,
+          patient_name: pName,
+          patient_phone: pPhone,
+          reason: pReason,
+          preferred_date: pDate,
+          preferred_time_slot: pSlot,
+          status: pStatus,
+        },
+      });
+    }
 
     return NextResponse.json(newAppointment, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating appointment:', error);
     return NextResponse.json(
-      { error: 'Failed to create appointment' },
+      { error: error?.message || 'Failed to create appointment' },
       { status: 500 }
     );
   }
@@ -85,20 +110,36 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Missing appointment ID' }, { status: 400 });
     }
 
-    const updated = await (db as any).appointment.update({
-      where: { id },
-      data: {
-        status: status,
-        confirmedSlot: confirmedSlot || confirmed_slot || null,
-        confirmedDate: confirmedDate || confirmed_date || null,
-      },
-    });
+    const cSlot = confirmedSlot || confirmed_slot || null;
+    const cDate = confirmedDate || confirmed_date || null;
+
+    let updated;
+
+    try {
+      updated = await (db as any).appointment.update({
+        where: { id },
+        data: {
+          status: status,
+          confirmedSlot: cSlot,
+          confirmedDate: cDate,
+        },
+      });
+    } catch (dbErr) {
+      updated = await (db as any).appointment.update({
+        where: { id },
+        data: {
+          status: status,
+          confirmed_slot: cSlot,
+          confirmed_date: cDate,
+        },
+      });
+    }
 
     return NextResponse.json(updated, { status: 200 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating appointment:', error);
     return NextResponse.json(
-      { error: 'Failed to update appointment' },
+      { error: error?.message || 'Failed to update appointment' },
       { status: 500 }
     );
   }
