@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import HeroSection from '@/components/marketing/HeroSection';
 import DoctorIntroSection from '@/components/marketing/DoctorIntroSection';
@@ -11,8 +11,8 @@ import GalleryAndFaqSection from '@/components/marketing/GalleryAndFaqSection';
 
 export default function Home() {
   const handleBookClick = () => {
-    // Direct redirect to patient portal for login & booking
-    window.location.href = '/patient/dashboard';
+    // Direct redirect to patient login screen
+    window.location.href = '/patient/login';
   };
 
   return (
@@ -38,7 +38,7 @@ export default function Home() {
           {/* Navigation Links & Portals */}
           <div className="flex items-center gap-3 sm:gap-4">
             <Link
-              href="/patient/dashboard"
+              href="/patient/login"
               className="px-4 py-2 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs transition-all border border-rose-200"
             >
               👤 Patient Portal
@@ -77,7 +77,7 @@ export default function Home() {
             © 2026 BirthWave Healthcare. All Rights Reserved. Dr. Santhoshi Senior Obstetrician & Fertility Specialist.
           </p>
           <div className="flex justify-center gap-6 text-xs text-slate-500">
-            <Link href="/patient/dashboard" className="hover:text-rose-400">Patient Dashboard</Link>
+            <Link href="/patient/login" className="hover:text-rose-400">Patient Dashboard</Link>
             <span>•</span>
             <Link href="/clinical/dashboard" className="hover:text-rose-400">Clinical Desk</Link>
           </div>
