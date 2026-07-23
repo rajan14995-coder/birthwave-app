@@ -20,26 +20,49 @@ export default function BookingModal({ isOpen, onClose, patientInfo, onBookingSu
   const [reason, setReason] = useState('General Consultation');
   const [preferredDate, setPreferredDate] = useState('');
   const [preferredTimeSlot, setPreferredTimeSlot] = useState(TIME_SLOTS[0]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   if (!isOpen) return null;
 
-  const handleBook = (e: React.FormEvent) => {
+  const handleBook = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!patientInfo) return;
 
-    const newAppointment = {
-      id: `BW-${Math.floor(100000 + Math.random() * 900000)}`,
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    const payload = {
       patientName: patientInfo.name,
       patientPhone: patientInfo.phone,
       reason,
       preferredDate,
       preferredTimeSlot,
-      status: 'Pending Confirmation',
-      createdAt: new Date().toISOString(),
+      status: 'PENDING',
     };
 
-    onBookingSuccess(newAppointment);
-    onClose();
+    try {
+      const response = await fetch('/api/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to submit booking. Please try again.');
+      }
+
+      const savedAppointment = await response.json();
+
+      // Pass the DB saved record back to parent UI
+      onBookingSuccess(savedAppointment);
+      onClose();
+    } catch (err: any) {
+      console.error('Booking submission error:', err);
+      setErrorMessage(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -51,8 +74,20 @@ export default function BookingModal({ isOpen, onClose, patientInfo, onBookingSu
             <h2 className="text-xl font-black text-slate-900">Book Appointment</h2>
             <p className="text-xs text-slate-500">Consultation with Dr. Santhoshi</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+          <button 
+            onClick={onClose} 
+            disabled={isSubmitting}
+            className="text-slate-400 hover:text-slate-600 font-bold text-lg"
+          >
+            ✕
+          </button>
         </div>
+
+        {errorMessage && (
+          <div className="text-xs bg-rose-50 border border-rose-200 text-rose-600 p-3 rounded-xl font-medium">
+            {errorMessage}
+          </div>
+        )}
 
         <form onSubmit={handleBook} className="space-y-4">
           
@@ -73,6 +108,7 @@ export default function BookingModal({ isOpen, onClose, patientInfo, onBookingSu
             <select
               value={reason}
               onChange={(e) => setReason(e.target.value)}
+              disabled={isSubmitting}
               className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:border-rose-500 font-medium text-slate-900"
             >
               <option value="General Consultation">General Consultation</option>
@@ -92,6 +128,7 @@ export default function BookingModal({ isOpen, onClose, patientInfo, onBookingSu
               value={preferredDate}
               onChange={(e) => setPreferredDate(e.target.value)}
               min={new Date().toISOString().split('T')[0]}
+              disabled={isSubmitting}
               className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:border-rose-500 font-medium text-slate-900"
               required
             />
@@ -108,6 +145,7 @@ export default function BookingModal({ isOpen, onClose, patientInfo, onBookingSu
                   type="button"
                   key={slot}
                   onClick={() => setPreferredTimeSlot(slot)}
+                  disabled={isSubmitting}
                   className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all border text-center ${
                     preferredTimeSlot === slot
                       ? 'bg-rose-600 text-white border-rose-600 shadow-md'
@@ -122,9 +160,10 @@ export default function BookingModal({ isOpen, onClose, patientInfo, onBookingSu
 
           <button
             type="submit"
-            className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all mt-2"
+            disabled={isSubmitting}
+            className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all mt-2 disabled:opacity-50"
           >
-            Confirm & Submit Booking →
+            {isSubmitting ? 'Submitting to Server...' : 'Confirm & Submit Booking →'}
           </button>
         </form>
 
