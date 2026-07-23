@@ -1,26 +1,25 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db'; // Ensure this points to your Prisma DB instance
-import { AppointmentStatus } from '@prisma/client'; // Import Enum if defined in Prisma
+import { db } from '@/lib/db';
 
 export async function GET() {
   try {
     // Fetch all records ordered by creation date
-    const rawAppointments = await db.appointment.findMany({
+    const rawAppointments = await (db as any).appointment.findMany({
       orderBy: { createdAt: 'desc' },
     });
 
-    // Map database fields to normalize snake_case and camelCase formats
+    // Map database fields to support both snake_case and camelCase formats
     const appointments = rawAppointments.map((apt: any) => ({
       id: apt.id || apt.booking_id || apt.bookingId,
-      patientName: apt.patientName || apt.patient_name || apt.name || 'Patient',
-      patientPhone: apt.patientPhone || apt.patient_phone || apt.phone || 'N/A',
+      patientName: apt.patient_name || apt.patientName || apt.name || 'Patient',
+      patientPhone: apt.patient_phone || apt.patientPhone || apt.phone || 'N/A',
       reason: apt.reason || apt.service || 'Consultation',
-      preferredDate: apt.preferredDate || apt.preferred_date || apt.date || '',
-      preferredTimeSlot: apt.preferredTimeSlot || apt.preferred_time_slot || apt.time_slot || apt.slot || '',
+      preferredDate: apt.preferred_date || apt.preferredDate || apt.date || '',
+      preferredTimeSlot: apt.preferred_time_slot || apt.preferredTimeSlot || apt.time_slot || apt.slot || '',
       status: apt.status || 'Pending Confirmation',
-      confirmedSlot: apt.confirmedSlot || apt.confirmed_slot || null,
-      confirmedDate: apt.confirmedDate || apt.confirmed_date || null,
-      createdAt: apt.createdAt || apt.created_at,
+      confirmedSlot: apt.confirmed_slot || apt.confirmedSlot || null,
+      confirmedDate: apt.confirmed_date || apt.confirmedDate || null,
+      createdAt: apt.created_at || apt.createdAt,
     }));
 
     return NextResponse.json(appointments, {
@@ -58,18 +57,15 @@ export async function POST(request: Request) {
     // Generate custom booking ID format: BW-XXXXXX
     const customId = `BW-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    // Cast status safely to match Prisma type definition
-    const initialStatus = (status || 'Pending Confirmation') as AppointmentStatus;
-
-    const newAppointment = await db.appointment.create({
+    const newAppointment = await (db as any).appointment.create({
       data: {
         id: customId,
-        patientName: patientName || patient_name,
-        patientPhone: patientPhone || patient_phone,
+        patient_name: patient_name || patientName || 'Patient',
+        patient_phone: patient_phone || patientPhone || 'N/A',
         reason: reason || 'Consultation',
-        preferredDate: preferredDate || preferred_date,
-        preferredTimeSlot: preferredTimeSlot || preferred_time_slot,
-        status: initialStatus,
+        preferred_date: preferred_date || preferredDate || '',
+        preferred_time_slot: preferred_time_slot || preferredTimeSlot || '',
+        status: status || 'Pending Confirmation',
       },
     });
 
@@ -86,18 +82,18 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { id, status, confirmedSlot, confirmedDate } = body;
+    const { id, status, confirmedSlot, confirmed_slot, confirmedDate, confirmed_date } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'Missing appointment ID' }, { status: 400 });
     }
 
-    const updated = await db.appointment.update({
+    const updated = await (db as any).appointment.update({
       where: { id },
       data: {
-        status: status as AppointmentStatus,
-        confirmedSlot: confirmedSlot || null,
-        confirmedDate: confirmedDate || null,
+        status: status,
+        confirmed_slot: confirmed_slot || confirmedSlot || null,
+        confirmed_date: confirmed_date || confirmedDate || null,
       },
     });
 
