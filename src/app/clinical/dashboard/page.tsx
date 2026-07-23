@@ -22,6 +22,7 @@ export default function DoctorDashboard() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Navigation & Analytics Views
   const [activeTab, setActiveTab] = useState<'today' | 'action' | 'history' | 'monthly' | 'all'>('today');
@@ -44,9 +45,19 @@ export default function DoctorDashboard() {
     }
   }, []);
 
-  const loadAppointments = () => {
-    const saved = JSON.parse(localStorage.getItem('bw_appointments') || '[]');
-    setAppointments(saved);
+  const loadAppointments = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/appointments');
+      if (response.ok) {
+        const data = await response.json();
+        setAppointments(Array.isArray(data) ? data : data.appointments || []);
+      }
+    } catch (err) {
+      console.error('Error fetching appointments from API:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -75,36 +86,70 @@ export default function DoctorDashboard() {
     setCustomDate(apt.preferredDate || new Date().toISOString().split('T')[0]);
   };
 
-  // Save Confirmed Slot
-  const finalizeConfirmation = () => {
+  // Save Confirmed Slot to DB via API
+  const finalizeConfirmation = async () => {
     if (!confirmingApt) return;
 
     const finalDate = useCustomDate ? customDate : confirmingApt.preferredDate;
-    const updated = appointments.map((apt) =>
-      apt.id === confirmingApt.id
-        ? {
-            ...apt,
-            status: 'Confirmed',
-            confirmedSlot: selectedExactSlot,
-            confirmedDate: finalDate,
-          }
-        : apt
-    );
 
-    setAppointments(updated);
-    localStorage.setItem('bw_appointments', JSON.stringify(updated));
-    setConfirmingApt(null);
+    try {
+      const response = await fetch('/api/appointments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: confirmingApt.id,
+          status: 'Confirmed',
+          confirmedSlot: selectedExactSlot,
+          confirmedDate: finalDate,
+        }),
+      });
+
+      if (response.ok) {
+        setAppointments((prev) =>
+          prev.map((apt) =>
+            apt.id === confirmingApt.id
+              ? {
+                  ...apt,
+                  status: 'Confirmed',
+                  confirmedSlot: selectedExactSlot,
+                  confirmedDate: finalDate,
+                }
+              : apt
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Error confirming appointment:', err);
+    } finally {
+      setConfirmingApt(null);
+    }
   };
 
-  const handleMoveBackToPending = (id: string) => {
-    const updated = appointments.map((apt) =>
-      apt.id === id ? { ...apt, status: 'Pending Confirmation', confirmedSlot: undefined } : apt
-    );
-    setAppointments(updated);
-    localStorage.setItem('bw_appointments', JSON.stringify(updated));
+  const handleMoveBackToPending = async (id: string) => {
+    try {
+      const response = await fetch('/api/appointments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          status: 'Pending Confirmation',
+          confirmedSlot: null,
+        }),
+      });
+
+      if (response.ok) {
+        setAppointments((prev) =>
+          prev.map((apt) =>
+            apt.id === id ? { ...apt, status: 'Pending Confirmation', confirmedSlot: undefined } : apt
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Error updating appointment:', err);
+    }
   };
 
-  // Get list of already occupied slots on a particular date
+  // Get list of occupied slots on a date
   const getOccupiedSlots = (date: string) => {
     return appointments
       .filter((a) => a.status === 'Confirmed' && (a.confirmedDate === date || a.preferredDate === date))
@@ -131,7 +176,7 @@ export default function DoctorDashboard() {
     } else if (activeTab === 'history') {
       return apt.status === 'Confirmed' || apt.status === 'Cancelled';
     }
-    return true; // 'all' or 'monthly'
+    return true;
   });
 
   // Calculate Metrics
@@ -198,9 +243,10 @@ export default function DoctorDashboard() {
         <div className="flex items-center gap-3">
           <button
             onClick={loadAppointments}
+            disabled={isLoading}
             className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 transition-all border border-slate-700"
           >
-            🔄 Refresh Queue
+            {isLoading ? '⏳ Refreshing...' : '🔄 Refresh Queue'}
           </button>
           <button
             onClick={handleLogout}
@@ -306,7 +352,7 @@ export default function DoctorDashboard() {
 
         </div>
 
-        {/* VIEW 1: MONTHLY DASHBOARD OVERVIEW */}
+        {/* MONTHLY DASHBOARD */}
         {activeTab === 'monthly' ? (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -337,7 +383,6 @@ export default function DoctorDashboard() {
               </div>
             </div>
 
-            {/* Monthly Trend Breakdowns */}
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
               <h3 className="text-base font-bold text-white">Monthly Patient Distribution Overview</h3>
               <div className="space-y-3">
@@ -374,9 +419,13 @@ export default function DoctorDashboard() {
             </div>
           </div>
         ) : (
-          /* VIEW 2: APPOINTMENT CARDS LIST */
+          /* APPOINTMENT CARDS LIST */
           <div className="space-y-4">
-            {filteredAppointments.length === 0 ? (
+            {isLoading ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center text-slate-400">
+                Loading live records from database...
+              </div>
+            ) : filteredAppointments.length === 0 ? (
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-3">
                 <span className="text-3xl">📋</span>
                 <h3 className="text-base font-bold text-slate-300">No Records Found</h3>
@@ -434,7 +483,6 @@ export default function DoctorDashboard() {
                     </div>
                   </div>
 
-                  {/* Actions */}
                   <div className="flex items-center gap-3 shrink-0">
                     {apt.status === 'Pending Confirmation' && (
                       <button
@@ -462,7 +510,7 @@ export default function DoctorDashboard() {
 
       </main>
 
-      {/* MODAL: TIME SLOT SELECTION & CONFLICT RESOLUTION */}
+      {/* MODAL */}
       {confirmingApt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 font-sans text-slate-100">
           <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
@@ -481,13 +529,11 @@ export default function DoctorDashboard() {
               </button>
             </div>
 
-            {/* Requested Window Info */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs space-y-1">
               <p><span className="text-slate-500">Requested Date:</span> <strong>{confirmingApt.preferredDate}</strong></p>
               <p><span className="text-slate-500">Requested Window:</span> <strong className="text-rose-400">{confirmingApt.preferredTimeSlot}</strong></p>
             </div>
 
-            {/* Slot Options Selection */}
             {!useCustomDate ? (
               <div className="space-y-3">
                 <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
@@ -515,7 +561,6 @@ export default function DoctorDashboard() {
                   })}
                 </div>
 
-                {/* Same day alternative slots if window is full */}
                 <div className="pt-2">
                   <span className="text-[11px] text-slate-400 block mb-2">Or select same-day alternative evening slots:</span>
                   <div className="flex flex-wrap gap-2">
@@ -544,7 +589,6 @@ export default function DoctorDashboard() {
                 </button>
               </div>
             ) : (
-              /* Custom Date Picker Section */
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
