@@ -38,7 +38,7 @@ export async function GET(request: Request) {
       id: apt.id,
       patientName: apt.patient?.name || 'Patient',
       patientPhone: apt.patient?.phone || 'N/A',
-      reason: apt.service?.title || apt.service?.name || 'Consultation',
+      reason: apt.service?.name || 'Consultation',
       preferredDate: apt.requestedDate ? new Date(apt.requestedDate).toISOString().split('T')[0] : '',
       preferredTimeSlot: apt.slotWindow || '',
       status: apt.status || 'PENDING',
@@ -101,14 +101,14 @@ export async function POST(request: Request) {
 
     let targetServiceId = serviceId;
     if (!targetServiceId) {
+      const serviceName = reason || 'General Consultation';
       let service = await (db as any).service.findFirst({
-        where: { OR: [{ title: reason }, { name: reason }] },
+        where: { name: serviceName },
       });
       if (!service) {
         service = await (db as any).service.create({
           data: {
-            title: reason || 'General Consultation',
-            name: reason || 'General Consultation',
+            name: serviceName,
           },
         });
       }
