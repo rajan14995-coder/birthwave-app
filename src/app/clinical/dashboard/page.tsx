@@ -36,7 +36,7 @@ const isPendingStatus = (status: string) => {
 
 const isConfirmedStatus = (status: string) => {
   const s = (status || '').toUpperCase();
-  return s === 'CONFIRMED';
+  return s === 'APPROVED';
 };
 
 export default function DoctorDashboard() {
@@ -137,9 +137,9 @@ export default function DoctorDashboard() {
       const response = await fetch('/api/appointments', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+          body: JSON.stringify({
           id: confirmingApt.id,
-          status: 'CONFIRMED',
+          status: 'APPROVED',
           confirmedSlot: selectedExactSlot,
           confirmedDate: finalDate,
         }),
@@ -151,7 +151,7 @@ export default function DoctorDashboard() {
             apt.id === confirmingApt.id
               ? {
                   ...apt,
-                  status: 'CONFIRMED',
+                  status: 'APPROVED',
                   confirmedSlot: selectedExactSlot,
                   confirmedDate: finalDate,
                 }
@@ -182,13 +182,14 @@ export default function DoctorDashboard() {
           id,
           status: 'PENDING',
           confirmedSlot: null,
+          confirmedDate: null,
         }),
       });
 
       if (response.ok) {
         setAppointments((prev) =>
           prev.map((apt) =>
-            apt.id === id ? { ...apt, status: 'PENDING', confirmedSlot: null } : apt
+            apt.id === id ? { ...apt, status: 'PENDING', confirmedSlot: null, confirmedDate: undefined } : apt
           )
         );
         setFeedbackMsg({ type: 'success', text: 'Appointment moved back to pending status.' });
@@ -542,7 +543,7 @@ export default function DoctorDashboard() {
                         <span className="text-slate-500 font-semibold">Requested Window:</span>{' '}
                         {apt.preferredDate} ({apt.preferredTimeSlot || 'Standard Window'})
                       </p>
-                      {apt.confirmedSlot && (
+                        {isConfirmedStatus(apt.status) && apt.confirmedSlot && (
                         <p className="text-emerald-400 font-bold">
                           ✓ Final Confirmed Slot: {apt.confirmedDate || apt.preferredDate} at {apt.confirmedSlot}
                         </p>
