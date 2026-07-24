@@ -38,11 +38,15 @@ export async function GET(request: Request) {
       patientPhone: apt.patient?.phone || 'N/A',
       reason: apt.service?.name || 'Consultation',
       preferredDate: apt.requestedDate ? new Date(apt.requestedDate).toISOString().split('T')[0] : '',
-      preferredTimeSlot: apt.slotWindow || '',
+      preferredTimeSlot: apt.preferredTimeLabel || apt.slotWindow || '',
       status: apt.status || 'PENDING',
-      confirmedSlot: apt.proposedSlotWindow || apt.slotWindow || null,
-      confirmedDate: apt.proposedDate ? new Date(apt.proposedDate).toISOString().split('T')[0] : null,
-      createdAt: apt.createdAt,
+      // Only surface a confirmed slot once staff has actually approved the appointment —
+      // never fall back to the patient's original requested slot.
+      confirmedSlot: apt.status === 'APPROVED' ? apt.confirmedTimeLabel || apt.proposedSlotWindow || null : null,
+      confirmedDate:
+        apt.status === 'APPROVED' && apt.proposedDate
+          ? new Date(apt.proposedDate).toISOString().split('T')[0]
+          : null,      createdAt: apt.createdAt,
     }));
 
     return NextResponse.json(appointments, {
@@ -119,6 +123,7 @@ export async function POST(request: Request) {
         serviceId: targetServiceId,
         requestedDate: validRequestedDate,
         slotWindow: mappedSlotWindow,
+        preferredTimeLabel: rawSlot || null,
         status: status || 'PENDING',
       },
       include: {
@@ -149,12 +154,13 @@ export async function PUT(request: Request) {
       validStatus = 'APPROVED';
     }
 
-    const updated = await (db as any).appointment.update({
+      const updated = await (db as any).appointment.update({
       where: { id },
       data: {
         status: validStatus || 'APPROVED',
-        proposedSlotWindow: confirmedSlot ? getSlotWindowEnum(confirmedSlot) : undefined,
-        proposedDate: confirmedDate ? new Date(confirmedDate) : undefined,
+        confirmedTimeLabel: confirmedSlot === null ? null : confirmedSlot || undefined,
+        proposedSlotWindow: confirmedSlot ? getSlotWindowEnum(confirmedSlot) : confirmedSlot === null ? null : undefined,
+        proposedDate: confirmedDate === null ? null : confirmedDate ? new Date(confirmedDate) : undefined,
       },
       include: {
         patient: true,
