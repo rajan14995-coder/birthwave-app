@@ -92,11 +92,13 @@ model Appointment {
   service         Service           @relation(fields: [serviceId], references: [id])
   requestedDate   DateTime // date only, time encoded via slotWindow
   slotWindow      SlotWindow
+  preferredTimeLabel String? // exact patient-chosen range, e.g. "09:00 AM - 11:00 AM"
   status          AppointmentStatus @default(PENDING)
 
   // Reschedule proposal fields (set by staff, confirmed/declined by patient)
   proposedDate       DateTime?
   proposedSlotWindow SlotWindow?
+  confirmedTimeLabel String? // exact staff-confirmed time, e.g. "09:30 AM"
   proposalToken      String?   @unique // magic-link token sent via SMS
   proposalTokenExp   DateTime?
 
