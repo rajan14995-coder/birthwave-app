@@ -10,6 +10,25 @@ function getSlotWindowEnum(slot: string): 'MORNING' | 'EVENING' {
   return 'EVENING';
 }
 
+// Parses a slot label like "09:00 AM - 11:00 AM" into the actual start Date on the given day
+function getSlotStartDateTime(dateStr: string, slotLabel: string): Date | null {
+  if (!dateStr || !slotLabel) return null;
+  const startPart = slotLabel.split('-')[0].trim();
+  const match = startPart.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return null;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const meridiem = match[3].toUpperCase();
+  if (meridiem === 'PM' && hours !== 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+  const dt = new Date(dateStr + 'T00:00:00');
+  if (isNaN(dt.getTime())) return null;
+  dt.setHours(hours, minutes, 0, 0);
+  return dt;
+}
+
+const MIN_BOOKING_LEAD_HOURS = 4;
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -46,7 +65,8 @@ export async function GET(request: Request) {
       confirmedDate:
         apt.status === 'APPROVED' && apt.proposedDate
           ? new Date(apt.proposedDate).toISOString().split('T')[0]
-          : null,      createdAt: apt.createdAt,
+          : null,
+      createdAt: apt.createdAt,
     }));
 
     return NextResponse.json(appointments, {
@@ -87,6 +107,43 @@ export async function POST(request: Request) {
     const validRequestedDate = isNaN(parsedDateTime.getTime()) ? new Date() : parsedDateTime;
     const rawSlot = preferredTimeSlot || preferred_time_slot || '';
     const mappedSlotWindow = slotWindow || getSlotWindowEnum(rawSlot);
+
+    // --- Booking rules enforcement (server-side, in addition to the client-side UX checks) ---
+    const requestedDateOnly = new Date(dateStr + 'T00:00:00');
+    if (isNaN(requestedDateOnly.getTime())) {
+      return NextResponse.json({ error: 'Invalid appointment date.' }, { status: 400 });
+    }
+
+    // No Sunday bookings
+    if (requestedDateOnly.getDay() === 0) {
+      return NextResponse.json(
+        { error: 'Sundays are not available for booking. Please choose another date.' },
+        { status: 400 }
+      );
+    }
+
+    // No backdated bookings (date-only check, catches any unparseable slot label too)
+    const todayDateOnly = new Date();
+    todayDateOnly.setHours(0, 0, 0, 0);
+    if (requestedDateOnly.getTime() < todayDateOnly.getTime()) {
+      return NextResponse.json({ error: 'You cannot book an appointment in the past.' }, { status: 400 });
+    }
+
+    // Minimum 4-hour lead time, checked against the exact slot start time when parseable
+    const slotStart = getSlotStartDateTime(dateStr, rawSlot);
+    if (slotStart) {
+      if (slotStart.getTime() < Date.now()) {
+        return NextResponse.json({ error: 'You cannot book an appointment in the past.' }, { status: 400 });
+      }
+      const minBookableTime = new Date(Date.now() + MIN_BOOKING_LEAD_HOURS * 60 * 60 * 1000);
+      if (slotStart.getTime() < minBookableTime.getTime()) {
+        return NextResponse.json(
+          { error: `Appointments must be booked at least ${MIN_BOOKING_LEAD_HOURS} hours in advance.` },
+          { status: 400 }
+        );
+      }
+    }
+    // --- End booking rules enforcement ---
 
     let targetPatientId = patientId;
     if (!targetPatientId) {
@@ -148,13 +205,14 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Missing appointment ID' }, { status: 400 });
     }
 
-    // Map UI actions to valid AppointmentStatus Enum: 'APPROVED', 'DECLINED', 'CANCELLED', 'COMPLETED', etc.
+    // Map any legacy UI status values to the real AppointmentStatus enum.
+    // 'APPROVED' is the single source of truth — the DB schema has no 'CONFIRMED' value.
     let validStatus = status;
     if (status === 'CONFIRMED' || status === 'SCHEDULED' || status === 'APPROVED') {
       validStatus = 'APPROVED';
     }
 
-      const updated = await (db as any).appointment.update({
+    const updated = await (db as any).appointment.update({
       where: { id },
       data: {
         status: validStatus || 'APPROVED',
