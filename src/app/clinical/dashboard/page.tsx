@@ -14,19 +14,18 @@ interface Appointment {
   status: string;
 }
 
-// Slot generation helper
-const generateSubSlots = (preferredWindow: string = ''): string[] => {
-  if (preferredWindow.includes('09:00 AM')) {
-    return ['09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM'];
-  } else if (preferredWindow.includes('11:00 AM')) {
-    return ['11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '01:00 PM'];
-  } else if (preferredWindow.includes('02:00 PM')) {
-    return ['02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM', '04:00 PM'];
-  }
-  return ['09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '02:00 PM', '02:30 PM', '03:00 PM'];
-};
+// Full catalog of bookable slots in a clinical day (30-min increments, lunch break 12:30–2:00 PM)
+const ALL_DAY_SLOTS = [
+  '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM',
+  '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM', '04:00 PM', '04:30 PM', '05:00 PM', '05:30 PM', '06:00 PM',
+];
 
-const ALTERNATIVE_DAY_SLOTS = ['04:30 PM', '05:00 PM', '05:30 PM', '06:00 PM'];
+// Add N days to a YYYY-MM-DD date string
+const addDays = (dateStr: string, days: number): string => {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+};
 
 // Status Helpers
 const isPendingStatus = (status: string) => {
@@ -57,8 +56,8 @@ export default function DoctorDashboard() {
   // Confirmation Modal State
   const [confirmingApt, setConfirmingApt] = useState<Appointment | null>(null);
   const [selectedExactSlot, setSelectedExactSlot] = useState('');
-  const [customDate, setCustomDate] = useState('');
-  const [useCustomDate, setUseCustomDate] = useState(false);
+  const [viewDate, setViewDate] = useState('');
+  const [autoAdvanceNotice, setAutoAdvanceNotice] = useState('');
   const [todayStr, setTodayStr] = useState('');
 
   const envMobile = process.env.NEXT_PUBLIC_DOCTOR_MOBILE || '9876543210';
@@ -113,23 +112,34 @@ export default function DoctorDashboard() {
   // Open Modal to pick specific exact time slot
   const initiateConfirmation = (apt: Appointment) => {
     setConfirmingApt(apt);
-    const subSlots = generateSubSlots(apt.preferredTimeSlot || '');
-    setSelectedExactSlot(subSlots[0] || '');
-    setUseCustomDate(false);
-    setCustomDate(apt.preferredDate || new Date().toISOString().split('T')[0]);
+    const requestedDate = apt.preferredDate || new Date().toISOString().split('T')[0];
+    const availableOnRequestedDate = getAvailableSlotsForDate(requestedDate);
+
+    if (availableOnRequestedDate.length > 0) {
+      setViewDate(requestedDate);
+      setSelectedExactSlot(availableOnRequestedDate[0]);
+      setAutoAdvanceNotice('');
+    } else {
+      const nextDate = findNextAvailableDate(addDays(requestedDate, 1));
+      const availableOnNextDate = getAvailableSlotsForDate(nextDate);
+      setViewDate(nextDate);
+      setSelectedExactSlot(availableOnNextDate[0] || '');
+      setAutoAdvanceNotice(`No slots available on ${requestedDate}. Showing the next available date: ${nextDate}.`);
+    }
   };
 
   const closeModal = () => {
     setConfirmingApt(null);
     setSelectedExactSlot('');
-    setUseCustomDate(false);
+    setViewDate('');
+    setAutoAdvanceNotice('');
   };
 
   // Save Confirmed Slot to DB via API
   const finalizeConfirmation = async () => {
     if (!confirmingApt) return;
 
-    const finalDate = useCustomDate ? customDate : confirmingApt.preferredDate;
+    const finalDate = viewDate || confirmingApt.preferredDate;
     setIsUpdating(true);
     setFeedbackMsg(null);
 
@@ -209,6 +219,22 @@ export default function DoctorDashboard() {
     return appointments
       .filter((a) => isConfirmedStatus(a.status) && (a.confirmedDate === date || a.preferredDate === date))
       .map((a) => a.confirmedSlot);
+  };
+
+  // All bookable slots for a given date, minus whatever is already confirmed that day
+  const getAvailableSlotsForDate = (date: string) => {
+    const occupied = getOccupiedSlots(date);
+    return ALL_DAY_SLOTS.filter((slot) => !occupied.includes(slot));
+  };
+
+  // Walk forward day by day (up to 30 days) to find the next date with at least one open slot
+  const findNextAvailableDate = (fromDate: string, maxDaysToCheck = 30): string => {
+    let candidate = fromDate;
+    for (let i = 0; i < maxDaysToCheck; i++) {
+      if (getAvailableSlotsForDate(candidate).length > 0) return candidate;
+      candidate = addDays(candidate, 1);
+    }
+    return candidate;
   };
 
   // Filtering Logic
@@ -604,104 +630,68 @@ export default function DoctorDashboard() {
               <p><span className="text-slate-500">Requested Window:</span> <strong className="text-rose-400">{confirmingApt.preferredTimeSlot}</strong></p>
             </div>
 
-            {!useCustomDate ? (
-              <div className="space-y-3">
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
-                  Select Specific 30-Min Time Slot:
+            <div className="space-y-3">
+              {autoAdvanceNotice && (
+                <p className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-900 rounded-xl px-3 py-2">
+                  ⚠️ {autoAdvanceNotice}
+                </p>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+                  Appointment Date:
                 </label>
+                <input
+                  type="date"
+                  value={viewDate}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    setViewDate(newDate);
+                    setAutoAdvanceNotice('');
+                    const available = getAvailableSlotsForDate(newDate);
+                    setSelectedExactSlot(available[0] || '');
+                  }}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                Available Slots for {viewDate}:
+              </label>
+              {getAvailableSlotsForDate(viewDate).length === 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500">No open slots on this date.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextDate = findNextAvailableDate(addDays(viewDate, 1));
+                      setAutoAdvanceNotice(`No slots available on ${viewDate}. Showing the next available date: ${nextDate}.`);
+                      setViewDate(nextDate);
+                      setSelectedExactSlot(getAvailableSlotsForDate(nextDate)[0] || '');
+                    }}
+                    className="text-xs text-rose-400 hover:underline font-semibold"
+                  >
+                    📅 Jump to next available date →
+                  </button>
+                </div>
+              ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {generateSubSlots(confirmingApt.preferredTimeSlot || '').map((slot) => {
-                    const occupied = getOccupiedSlots(confirmingApt.preferredDate).includes(slot);
-                    return (
-                      <button
-                        key={slot}
-                        disabled={occupied}
-                        onClick={() => setSelectedExactSlot(slot)}
-                        className={`p-3 rounded-xl text-xs font-bold border transition-all ${
-                          occupied
-                            ? 'bg-slate-950 border-slate-800 text-slate-600 line-through cursor-not-allowed'
-                            : selectedExactSlot === slot
-                            ? 'bg-rose-600 border-rose-500 text-white shadow-md'
-                            : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                        }`}
-                      >
-                        {slot} {occupied ? '(Booked)' : ''}
-                      </button>
-                    );
-                  })}
+                  {getAvailableSlotsForDate(viewDate).map((slot) => (
+                    <button
+                      key={slot}
+                      onClick={() => setSelectedExactSlot(slot)}
+                      className={`p-3 rounded-xl text-xs font-bold border transition-all ${
+                        selectedExactSlot === slot
+                          ? 'bg-rose-600 border-rose-500 text-white shadow-md'
+                          : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {slot}
+                    </button>
+                  ))}
                 </div>
-
-                <div className="pt-2">
-                  <span className="text-[11px] text-slate-400 block mb-2">Or select same-day alternative evening slots:</span>
-                  <div className="flex flex-wrap gap-2">
-                    {ALTERNATIVE_DAY_SLOTS.map((slot) => (
-                      <button
-                        key={slot}
-                        onClick={() => setSelectedExactSlot(slot)}
-                        className={`px-3 py-2 rounded-xl text-xs font-bold border ${
-                          selectedExactSlot === slot
-                            ? 'bg-rose-600 border-rose-500 text-white'
-                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {slot}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setUseCustomDate(true)}
-                  className="text-xs text-rose-400 hover:underline font-semibold pt-1 block"
-                >
-                  📅 No slots working? Pick a different date →
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                    Choose New Date:
-                  </label>
-                  <input
-                    type="date"
-                    value={customDate}
-                    onChange={(e) => setCustomDate(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-rose-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                    Select Available Slot for {customDate}:
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {['10:00 AM', '11:30 AM', '03:00 PM', '05:00 PM'].map((slot) => (
-                      <button
-                        key={slot}
-                        onClick={() => setSelectedExactSlot(slot)}
-                        className={`p-3 rounded-xl text-xs font-bold border transition-all ${
-                          selectedExactSlot === slot
-                            ? 'bg-rose-600 border-rose-500 text-white shadow-md'
-                            : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                        }`}
-                      >
-                        {slot}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setUseCustomDate(false)}
-                  className="text-xs text-slate-400 hover:text-white font-semibold block"
-                >
-                  ← Back to requested date
-                </button>
-              </div>
-            )}
+              )}
+            </div>
 
             <div className="flex gap-3 pt-4 border-t border-slate-800">
               <button
