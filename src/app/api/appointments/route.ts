@@ -29,10 +29,18 @@ function getSlotStartDateTime(dateStr: string, slotLabel: string): Date | null {
 
 const MIN_BOOKING_LEAD_HOURS = 4;
 
+// Strips everything but digits and keeps the last 10 — matches phone numbers
+// regardless of spacing, dashes, or a leading +91/91 the user (or a form) might add.
+function normalizePhone(raw: string): string {
+  const digits = (raw || '').replace(/\D/g, '');
+  return digits.slice(-10);
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const phone = searchParams.get('phone');
+    const rawPhone = searchParams.get('phone');
+    const phone = rawPhone ? normalizePhone(rawPhone) : '';
 
     const whereClause = phone
       ? {
@@ -100,8 +108,13 @@ export async function POST(request: Request) {
       serviceId,
     } = body;
 
-    const name = patientName || patient_name || 'Amudha';
-    const phone = patientPhone || patient_phone || '9489881864';
+    const name = (patientName || patient_name || '').trim();
+    const phone = normalizePhone(patientPhone || patient_phone || '');
+
+    if (!name || !phone) {
+      return NextResponse.json({ error: 'Patient name and phone number are required.' }, { status: 400 });
+    }
+
     const dateStr = preferredDate || preferred_date || new Date().toISOString().split('T')[0];
     const parsedDateTime = new Date(dateStr);
     const validRequestedDate = isNaN(parsedDateTime.getTime()) ? new Date() : parsedDateTime;
@@ -147,12 +160,21 @@ export async function POST(request: Request) {
 
     let targetPatientId = patientId;
     if (!targetPatientId) {
+      // Match strictly by phone — phone is the real unique identifier (see schema).
+      // Matching by name too would silently attach bookings to the wrong person
+      // whenever two patients happen to share a name.
       let patient = await (db as any).patient.findFirst({
-        where: { OR: [{ phone: phone }, { name: name }] },
+        where: { phone },
       });
       if (!patient) {
         patient = await (db as any).patient.create({
           data: { name, phone },
+        });
+      } else if (patient.name !== name) {
+        // Keep the stored name in sync with whatever they most recently entered
+        patient = await (db as any).patient.update({
+          where: { id: patient.id },
+          data: { name },
         });
       }
       targetPatientId = patient.id;
