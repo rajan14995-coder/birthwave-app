@@ -60,6 +60,10 @@ export default function DoctorDashboard() {
   const [autoAdvanceNotice, setAutoAdvanceNotice] = useState('');
   const [todayStr, setTodayStr] = useState('');
 
+  // Monthly Calendar State
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
+  const [dayDetail, setDayDetail] = useState<{ date: string; type: 'confirmed' | 'action' } | null>(null);
+
   const envMobile = process.env.NEXT_PUBLIC_DOCTOR_MOBILE || '9876543210';
   const envPassword = process.env.NEXT_PUBLIC_DOCTOR_PASSWORD || 'doctor@123';
 
@@ -147,7 +151,7 @@ export default function DoctorDashboard() {
       const response = await fetch('/api/appointments', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        body: JSON.stringify({
           id: confirmingApt.id,
           status: 'APPROVED',
           confirmedSlot: selectedExactSlot,
@@ -235,6 +239,52 @@ export default function DoctorDashboard() {
       candidate = addDays(candidate, 1);
     }
     return candidate;
+  };
+
+  // Per-date Confirmed / Action-Required counts for the monthly calendar
+  const calendarCounts = useMemo(() => {
+    const map: Record<string, { confirmed: number; action: number }> = {};
+    appointments.forEach((apt) => {
+      const confirmed = isConfirmedStatus(apt.status);
+      const pending = isPendingStatus(apt.status);
+      if (!confirmed && !pending) return;
+
+      const dateKey = confirmed ? apt.confirmedDate || apt.preferredDate : apt.preferredDate;
+      if (!dateKey) return;
+
+      if (!map[dateKey]) map[dateKey] = { confirmed: 0, action: 0 };
+      if (confirmed) map[dateKey].confirmed += 1;
+      if (pending) map[dateKey].action += 1;
+    });
+    return map;
+  }, [appointments]);
+
+  // Build the grid of day cells (with leading blanks) for whichever month is being viewed
+  const calendarCells = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const cells: Array<{ date: string; day: number } | null> = [];
+    for (let i = 0; i < firstWeekday; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      cells.push({ date: dateStr, day: d });
+    }
+    return cells;
+  }, [calendarMonth]);
+
+  const goToPrevMonth = () => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  const goToNextMonth = () => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+
+  // Appointments backing whichever count the doctor clicked on the calendar
+  const getAppointmentsForDayDetail = (date: string, type: 'confirmed' | 'action') => {
+    return appointments.filter((apt) =>
+      type === 'confirmed'
+        ? isConfirmedStatus(apt.status) && (apt.confirmedDate || apt.preferredDate) === date
+        : isPendingStatus(apt.status) && apt.preferredDate === date
+    );
   };
 
   // Filtering Logic
@@ -477,6 +527,83 @@ export default function DoctorDashboard() {
               </div>
             </div>
 
+            {/* Monthly Calendar */}
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <h3 className="text-base font-bold text-white">
+                  📅 {calendarMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={goToPrevMonth}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700"
+                  >
+                    ← Prev
+                  </button>
+                  <button
+                    onClick={() => setCalendarMonth(new Date())}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700"
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={goToNextMonth}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                <span>Sun</span>
+                <span>Mon</span>
+                <span>Tue</span>
+                <span>Wed</span>
+                <span>Thu</span>
+                <span>Fri</span>
+                <span>Sat</span>
+              </div>
+
+              <div className="grid grid-cols-7 gap-1.5">
+                {calendarCells.map((cell, idx) => {
+                  if (!cell) return <div key={`blank-${idx}`} />;
+                  const counts = calendarCounts[cell.date] || { confirmed: 0, action: 0 };
+                  const isToday = cell.date === todayStr;
+                  return (
+                    <div
+                      key={cell.date}
+                      className={`rounded-xl border p-2 min-h-[74px] flex flex-col gap-1 ${
+                        isToday ? 'border-rose-600 bg-rose-950/20' : 'border-slate-800 bg-slate-950/40'
+                      }`}
+                    >
+                      <span className={`text-[11px] font-bold ${isToday ? 'text-rose-400' : 'text-slate-400'}`}>
+                        {cell.day}
+                      </span>
+                      <div className="flex flex-col gap-1">
+                        {counts.confirmed > 0 && (
+                          <button
+                            onClick={() => setDayDetail({ date: cell.date, type: 'confirmed' })}
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-950 text-emerald-400 border border-emerald-800 hover:bg-emerald-900 text-left"
+                          >
+                            ✓ {counts.confirmed} Confirmed
+                          </button>
+                        )}
+                        {counts.action > 0 && (
+                          <button
+                            onClick={() => setDayDetail({ date: cell.date, type: 'action' })}
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-950 text-amber-400 border border-amber-800 hover:bg-amber-900 text-left"
+                          >
+                            ⚠ {counts.action} Action
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
               <h3 className="text-base font-bold text-white">Monthly Patient Distribution Overview</h3>
               <div className="space-y-3">
@@ -569,7 +696,7 @@ export default function DoctorDashboard() {
                         <span className="text-slate-500 font-semibold">Requested Window:</span>{' '}
                         {apt.preferredDate} ({apt.preferredTimeSlot || 'Standard Window'})
                       </p>
-                        {isConfirmedStatus(apt.status) && apt.confirmedSlot && (
+                      {isConfirmedStatus(apt.status) && apt.confirmedSlot && (
                         <p className="text-emerald-400 font-bold">
                           ✓ Final Confirmed Slot: {apt.confirmedDate || apt.preferredDate} at {apt.confirmedSlot}
                         </p>
@@ -709,6 +836,54 @@ export default function DoctorDashboard() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* DAY DETAIL MODAL — shown when a Confirmed/Action count is clicked on the calendar */}
+      {dayDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 font-sans text-slate-100">
+          <div className="w-full max-w-lg max-h-[80vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-widest ${
+                    dayDetail.type === 'confirmed' ? 'text-emerald-500' : 'text-amber-500'
+                  }`}
+                >
+                  {dayDetail.type === 'confirmed' ? 'Confirmed Appointments' : 'Action Required'}
+                </span>
+                <h3 className="text-xl font-black text-white">{dayDetail.date}</h3>
+              </div>
+              <button
+                onClick={() => setDayDetail(null)}
+                className="text-slate-400 hover:text-white font-bold text-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {getAppointmentsForDayDetail(dayDetail.date, dayDetail.type).map((apt) => (
+                <div key={apt.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-white">{apt.patientName}</h4>
+                    <span className="text-[10px] font-mono text-rose-400">{apt.id}</span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    +91 {apt.patientPhone} • {apt.reason}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {dayDetail.type === 'confirmed'
+                      ? `Confirmed at ${apt.confirmedSlot}`
+                      : `Requested: ${apt.preferredTimeSlot || 'Standard Window'}`}
+                  </p>
+                </div>
+              ))}
+              {getAppointmentsForDayDetail(dayDetail.date, dayDetail.type).length === 0 && (
+                <p className="text-xs text-slate-500 text-center py-6">No appointments found.</p>
+              )}
+            </div>
           </div>
         </div>
       )}
