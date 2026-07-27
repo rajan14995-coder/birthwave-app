@@ -7,6 +7,8 @@ interface Appointment {
   patientName: string;
   patientPhone: string;
   reason: string;
+  doctorId?: string | null;
+  doctorName?: string | null;
   preferredDate: string;
   preferredTimeSlot?: string;
   confirmedSlot?: string | null;
@@ -48,6 +50,10 @@ export default function DoctorDashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Doctor filter
+  const [doctors, setDoctors] = useState<Array<{ id: string; name: string; specialtyLabel: string }>>([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
 
   // Navigation & Analytics Views
   const [activeTab, setActiveTab] = useState<'today' | 'action' | 'history' | 'monthly' | 'all'>('action');
@@ -93,6 +99,10 @@ export default function DoctorDashboard() {
     if (doctorAuth === 'true') {
       setIsAuthenticated(true);
       loadAppointments();
+      fetch('/api/doctors', { cache: 'no-store' })
+        .then((res) => res.json())
+        .then((data) => setDoctors(Array.isArray(data) ? data : []))
+        .catch(() => {});
     }
   }, [loadAppointments]);
 
@@ -103,6 +113,10 @@ export default function DoctorDashboard() {
       localStorage.setItem('bw_doctor_auth', 'true');
       setLoginError('');
       loadAppointments();
+      fetch('/api/doctors', { cache: 'no-store' })
+        .then((res) => res.json())
+        .then((data) => setDoctors(Array.isArray(data) ? data : []))
+        .catch(() => {});
     } else {
       setLoginError('Invalid Mobile Number or Password');
     }
@@ -241,10 +255,16 @@ export default function DoctorDashboard() {
     return candidate;
   };
 
+  // Everything below the doctor filter derives from this instead of the raw appointments list
+  const visibleAppointments = useMemo(
+    () => (selectedDoctorId ? appointments.filter((a) => a.doctorId === selectedDoctorId) : appointments),
+    [appointments, selectedDoctorId]
+  );
+
   // Per-date Confirmed / Action-Required counts for the monthly calendar
   const calendarCounts = useMemo(() => {
     const map: Record<string, { confirmed: number; action: number }> = {};
-    appointments.forEach((apt) => {
+    visibleAppointments.forEach((apt) => {
       const confirmed = isConfirmedStatus(apt.status);
       const pending = isPendingStatus(apt.status);
       if (!confirmed && !pending) return;
@@ -257,7 +277,7 @@ export default function DoctorDashboard() {
       if (pending) map[dateKey].action += 1;
     });
     return map;
-  }, [appointments]);
+  }, [visibleAppointments]);
 
   // Build the grid of day cells (with leading blanks) for whichever month is being viewed
   const calendarCells = useMemo(() => {
@@ -280,7 +300,7 @@ export default function DoctorDashboard() {
 
   // Appointments backing whichever count the doctor clicked on the calendar
   const getAppointmentsForDayDetail = (date: string, type: 'confirmed' | 'action') => {
-    return appointments.filter((apt) =>
+    return visibleAppointments.filter((apt) =>
       type === 'confirmed'
         ? isConfirmedStatus(apt.status) && (apt.confirmedDate || apt.preferredDate) === date
         : isPendingStatus(apt.status) && apt.preferredDate === date
@@ -289,7 +309,7 @@ export default function DoctorDashboard() {
 
   // Filtering Logic
   const filteredAppointments = useMemo(() => {
-    return appointments.filter((apt) => {
+    return visibleAppointments.filter((apt) => {
       const query = searchQuery.toLowerCase().trim();
       const matchesSearch =
         !query ||
@@ -309,13 +329,13 @@ export default function DoctorDashboard() {
       }
       return true;
     });
-  }, [appointments, searchQuery, activeTab, todayStr]);
+  }, [visibleAppointments, searchQuery, activeTab, todayStr]);
 
   // Calculate Metrics
-  const todayCount = useMemo(() => appointments.filter((a) => a.preferredDate === todayStr || a.confirmedDate === todayStr).length, [appointments, todayStr]);
-  const actionCount = useMemo(() => appointments.filter((a) => isPendingStatus(a.status)).length, [appointments]);
-  const historyCount = useMemo(() => appointments.filter((a) => isConfirmedStatus(a.status) || (a.status || '').toUpperCase() === 'CANCELLED').length, [appointments]);
-  const totalConfirmed = useMemo(() => appointments.filter((a) => isConfirmedStatus(a.status)).length, [appointments]);
+  const todayCount = useMemo(() => visibleAppointments.filter((a) => a.preferredDate === todayStr || a.confirmedDate === todayStr).length, [visibleAppointments, todayStr]);
+  const actionCount = useMemo(() => visibleAppointments.filter((a) => isPendingStatus(a.status)).length, [visibleAppointments]);
+  const historyCount = useMemo(() => visibleAppointments.filter((a) => isConfirmedStatus(a.status) || (a.status || '').toUpperCase() === 'CANCELLED').length, [visibleAppointments]);
+  const totalConfirmed = useMemo(() => visibleAppointments.filter((a) => isConfirmedStatus(a.status)).length, [visibleAppointments]);
 
   if (!isAuthenticated) {
     return (
@@ -405,6 +425,36 @@ export default function DoctorDashboard() {
           </div>
         )}
 
+        {/* Doctor Filter */}
+        {doctors.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 bg-slate-900 p-3 rounded-2xl border border-slate-800">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1">Doctor:</span>
+            <button
+              onClick={() => setSelectedDoctorId('')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                selectedDoctorId === ''
+                  ? 'bg-rose-600 text-white shadow-md'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              All Doctors
+            </button>
+            {doctors.map((doc) => (
+              <button
+                key={doc.id}
+                onClick={() => setSelectedDoctorId(doc.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  selectedDoctorId === doc.id
+                    ? 'bg-rose-600 text-white shadow-md'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                {doc.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Navigation Tabs */}
         <div className="flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center bg-slate-900 p-3 rounded-2xl border border-slate-800">
           <div className="flex flex-wrap items-center gap-2">
@@ -469,7 +519,7 @@ export default function DoctorDashboard() {
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
-              All ({appointments.length})
+              All ({visibleAppointments.length})
             </button>
           </div>
 
@@ -502,7 +552,7 @@ export default function DoctorDashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-2">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Consultations</span>
-                <p className="text-3xl font-black text-white">{appointments.length}</p>
+                <p className="text-3xl font-black text-white">{visibleAppointments.length}</p>
                 <p className="text-[11px] text-emerald-400">↑ 12% vs last month</p>
               </div>
 
@@ -510,7 +560,7 @@ export default function DoctorDashboard() {
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Confirmed Slots</span>
                 <p className="text-3xl font-black text-emerald-400">{totalConfirmed}</p>
                 <p className="text-[11px] text-slate-400">
-                  {appointments.length ? Math.round((totalConfirmed / appointments.length) * 100) : 0}% Conversion Rate
+                  {visibleAppointments.length ? Math.round((totalConfirmed / visibleAppointments.length) * 100) : 0}% Conversion Rate
                 </p>
               </div>
 
@@ -685,6 +735,9 @@ export default function DoctorDashboard() {
                     </div>
 
                     <h3 className="text-xl font-bold text-white">{apt.patientName}</h3>
+                    {apt.doctorName && (
+                      <p className="text-xs font-semibold text-rose-400">with Dr. {apt.doctorName}</p>
+                    )}
 
                     <div className="text-xs text-slate-400 space-y-1">
                       <p>
