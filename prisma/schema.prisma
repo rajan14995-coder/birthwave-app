@@ -36,6 +36,11 @@ enum StaffRole {
   RECEPTION
 }
 
+enum ConsultationMode {
+  IN_PERSON
+  ONLINE
+}
+
 model Patient {
   id            String        @id @default(cuid())
   phone         String        @unique // stored as +91XXXXXXXXXX
@@ -78,10 +83,29 @@ model OtpCode {
 
 model Service {
   id          String        @id @default(cuid())
-  name        String        @unique // e.g. "Childbirth Education", "PCOS Management"
+  name        String        @unique // e.g. "Gynaecology Consultation", "Pediatric Consultation"
   description String?
   active      Boolean       @default(true)
   appointments Appointment[]
+  doctors     Doctor[]
+}
+
+// A doctor/practitioner offering a given Service. Multiple doctors can share
+// the same Service (e.g. two gynaecologists) — the patient picks between them.
+model Doctor {
+  id               String            @id @default(cuid())
+  name             String
+  specialtyLabel   String            // display title, e.g. "Gynaecologist", "Pelvic Floor Expert"
+  serviceId        String
+  service          Service           @relation(fields: [serviceId], references: [id])
+  consultationMode ConsultationMode  @default(IN_PERSON)
+  // JSON array of daily availability windows in 24h "HH:mm", e.g.
+  // [{"start":"10:00","end":"13:00"},{"start":"14:00","end":"16:00"}]
+  windows          Json
+  active           Boolean           @default(true)
+  appointments     Appointment[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 }
 
 model Appointment {
@@ -90,6 +114,8 @@ model Appointment {
   patient         Patient           @relation(fields: [patientId], references: [id])
   serviceId       String
   service         Service           @relation(fields: [serviceId], references: [id])
+  doctorId        String?
+  doctor          Doctor?           @relation(fields: [doctorId], references: [id])
   requestedDate   DateTime // date only, time encoded via slotWindow
   slotWindow      SlotWindow
   preferredTimeLabel String? // exact patient-chosen range, e.g. "09:00 AM - 11:00 AM"
@@ -98,7 +124,7 @@ model Appointment {
   // Reschedule proposal fields (set by staff, confirmed/declined by patient)
   proposedDate       DateTime?
   proposedSlotWindow SlotWindow?
-  confirmedTimeLabel String? // exact staff-confirmed time, e.g. "09:30 AM"
+  confirmedTimeLabel String? // exact confirmed time, e.g. "09:30 AM" — auto-set on instant booking too
   proposalToken      String?   @unique // magic-link token sent via SMS
   proposalTokenExp   DateTime?
 
@@ -108,6 +134,7 @@ model Appointment {
 
   @@index([status])
   @@index([requestedDate])
+  @@index([doctorId])
 }
 
 model FertilityAssessment {
