@@ -1,39 +1,24 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import {
+  MIN_BOOKING_LEAD_MINUTES,
+  generateDaySlots,
+  getSlotDateTime,
+  isSunday,
+  findNextAvailableSlots,
+} from '@/lib/scheduling';
 
-function getSlotWindowEnum(slot: string): 'MORNING' | 'EVENING' {
-  const lower = (slot || '').toLowerCase();
-  if (lower.includes('09:00') || lower.includes('11:00') || lower.includes('am') || lower.includes('morning')) {
-    return 'MORNING';
-  }
-  // Maps afternoon/evening to EVENING since schema only has MORNING and EVENING
-  return 'EVENING';
-}
-
-// Parses a slot label like "09:00 AM - 11:00 AM" into the actual start Date on the given day
-function getSlotStartDateTime(dateStr: string, slotLabel: string): Date | null {
-  if (!dateStr || !slotLabel) return null;
-  const startPart = slotLabel.split('-')[0].trim();
-  const match = startPart.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!match) return null;
-  let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const meridiem = match[3].toUpperCase();
-  if (meridiem === 'PM' && hours !== 12) hours += 12;
-  if (meridiem === 'AM' && hours === 12) hours = 0;
-  const dt = new Date(dateStr + 'T00:00:00');
-  if (isNaN(dt.getTime())) return null;
-  dt.setHours(hours, minutes, 0, 0);
-  return dt;
-}
-
-const MIN_BOOKING_LEAD_HOURS = 4;
-
-// Strips everything but digits and keeps the last 10 — matches phone numbers
-// regardless of spacing, dashes, or a leading +91/91 the user (or a form) might add.
 function normalizePhone(raw: string): string {
   const digits = (raw || '').replace(/\D/g, '');
   return digits.slice(-10);
+}
+
+// Derives the coarse MORNING/EVENING enum from an exact "HH:mm AM/PM" slot label
+function slotWindowFromExactTime(timeLabel: string): 'MORNING' | 'EVENING' {
+  const isPM = /PM$/i.test(timeLabel.trim());
+  const hourPart = parseInt(timeLabel.trim().split(':')[0], 10);
+  const hour24 = isPM && hourPart !== 12 ? hourPart + 12 : !isPM && hourPart === 12 ? 0 : hourPart;
+  return hour24 < 14 ? 'MORNING' : 'EVENING';
 }
 
 export async function GET(request: Request) {
@@ -41,20 +26,18 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const rawPhone = searchParams.get('phone');
     const phone = rawPhone ? normalizePhone(rawPhone) : '';
+    const doctorId = searchParams.get('doctorId');
 
-    const whereClause = phone
-      ? {
-          patient: {
-            phone: phone,
-          },
-        }
-      : {};
+    const whereClause: any = {};
+    if (phone) whereClause.patient = { phone };
+    if (doctorId) whereClause.doctorId = doctorId;
 
     const rawAppointments = await (db as any).appointment.findMany({
       where: whereClause,
       include: {
         patient: true,
         service: true,
+        doctor: true,
       },
       orderBy: { requestedDate: 'desc' },
     });
@@ -64,6 +47,10 @@ export async function GET(request: Request) {
       patientName: apt.patient?.name || 'Patient',
       patientPhone: apt.patient?.phone || 'N/A',
       reason: apt.service?.name || 'Consultation',
+      doctorId: apt.doctorId || null,
+      doctorName: apt.doctor?.name || null,
+      specialtyLabel: apt.doctor?.specialtyLabel || null,
+      consultationMode: apt.doctor?.consultationMode || null,
       preferredDate: apt.requestedDate ? new Date(apt.requestedDate).toISOString().split('T')[0] : '',
       preferredTimeSlot: apt.preferredTimeLabel || apt.slotWindow || '',
       status: apt.status || 'PENDING',
@@ -92,126 +79,139 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const {
-      patientName,
-      patient_name,
-      patientPhone,
-      patient_phone,
-      reason,
-      preferredDate,
-      preferred_date,
-      preferredTimeSlot,
-      preferred_time_slot,
-      status,
-      slotWindow,
-      patientId,
-      serviceId,
-    } = body;
+    const { patientName, patientPhone, doctorId, preferredDate, exactTime } = body;
 
-    const name = (patientName || patient_name || '').trim();
-    const phone = normalizePhone(patientPhone || patient_phone || '');
+    const name = (patientName || '').trim();
+    const phone = normalizePhone(patientPhone || '');
 
     if (!name || !phone) {
       return NextResponse.json({ error: 'Patient name and phone number are required.' }, { status: 400 });
     }
-
-    const dateStr = preferredDate || preferred_date || new Date().toISOString().split('T')[0];
-    const parsedDateTime = new Date(dateStr);
-    const validRequestedDate = isNaN(parsedDateTime.getTime()) ? new Date() : parsedDateTime;
-    const rawSlot = preferredTimeSlot || preferred_time_slot || '';
-    const mappedSlotWindow = slotWindow || getSlotWindowEnum(rawSlot);
-
-    // --- Booking rules enforcement (server-side, in addition to the client-side UX checks) ---
-    const requestedDateOnly = new Date(dateStr + 'T00:00:00');
-    if (isNaN(requestedDateOnly.getTime())) {
-      return NextResponse.json({ error: 'Invalid appointment date.' }, { status: 400 });
+    if (!doctorId) {
+      return NextResponse.json({ error: 'Please select a doctor.' }, { status: 400 });
+    }
+    if (!preferredDate || !exactTime) {
+      return NextResponse.json({ error: 'Please select a date and time slot.' }, { status: 400 });
     }
 
-    // No Sunday bookings
-    if (requestedDateOnly.getDay() === 0) {
+    const doctor = await (db as any).doctor.findUnique({ where: { id: doctorId }, include: { service: true } });
+    if (!doctor || !doctor.active) {
+      return NextResponse.json({ error: 'The selected doctor is not available.' }, { status: 400 });
+    }
+
+    // --- Booking rules ---
+    if (isSunday(preferredDate)) {
       return NextResponse.json(
         { error: 'Sundays are not available for booking. Please choose another date.' },
         { status: 400 }
       );
     }
 
-    // No backdated bookings (date-only check, catches any unparseable slot label too)
-    const todayDateOnly = new Date();
-    todayDateOnly.setHours(0, 0, 0, 0);
-    if (requestedDateOnly.getTime() < todayDateOnly.getTime()) {
+    const slotDt = getSlotDateTime(preferredDate, exactTime);
+    if (!slotDt) {
+      return NextResponse.json({ error: 'Invalid time slot.' }, { status: 400 });
+    }
+    if (slotDt.getTime() < Date.now()) {
       return NextResponse.json({ error: 'You cannot book an appointment in the past.' }, { status: 400 });
     }
-
-    // Minimum 4-hour lead time, checked against the exact slot start time when parseable
-    const slotStart = getSlotStartDateTime(dateStr, rawSlot);
-    if (slotStart) {
-      if (slotStart.getTime() < Date.now()) {
-        return NextResponse.json({ error: 'You cannot book an appointment in the past.' }, { status: 400 });
-      }
-      const minBookableTime = new Date(Date.now() + MIN_BOOKING_LEAD_HOURS * 60 * 60 * 1000);
-      if (slotStart.getTime() < minBookableTime.getTime()) {
-        return NextResponse.json(
-          { error: `Appointments must be booked at least ${MIN_BOOKING_LEAD_HOURS} hours in advance.` },
-          { status: 400 }
-        );
-      }
-    }
-    // --- End booking rules enforcement ---
-
-    let targetPatientId = patientId;
-    if (!targetPatientId) {
-      // Match strictly by phone — phone is the real unique identifier (see schema).
-      // Matching by name too would silently attach bookings to the wrong person
-      // whenever two patients happen to share a name.
-      let patient = await (db as any).patient.findFirst({
-        where: { phone },
-      });
-      if (!patient) {
-        patient = await (db as any).patient.create({
-          data: { name, phone },
-        });
-      } else if (patient.name !== name) {
-        // Keep the stored name in sync with whatever they most recently entered
-        patient = await (db as any).patient.update({
-          where: { id: patient.id },
-          data: { name },
-        });
-      }
-      targetPatientId = patient.id;
+    const minBookableTime = Date.now() + MIN_BOOKING_LEAD_MINUTES * 60 * 1000;
+    if (slotDt.getTime() < minBookableTime) {
+      return NextResponse.json(
+        { error: `Appointments must be booked at least ${MIN_BOOKING_LEAD_MINUTES} minutes in advance.` },
+        { status: 400 }
+      );
     }
 
-    let targetServiceId = serviceId;
-    if (!targetServiceId) {
-      const serviceName = reason || 'General Consultation';
-      let service = await (db as any).service.findFirst({
-        where: { name: serviceName },
-      });
-      if (!service) {
-        service = await (db as any).service.create({
-          data: {
-            name: serviceName,
-          },
-        });
-      }
-      targetServiceId = service.id;
+    const daySlots = generateDaySlots(doctor.windows);
+    if (!daySlots.includes(exactTime)) {
+      return NextResponse.json({ error: 'That time is outside the doctor\u2019s available hours.' }, { status: 400 });
     }
+    // --- End booking rules ---
 
-    const newAppointment = await (db as any).appointment.create({
-      data: {
-        patientId: targetPatientId,
-        serviceId: targetServiceId,
-        requestedDate: validRequestedDate,
-        slotWindow: mappedSlotWindow,
-        preferredTimeLabel: rawSlot || null,
-        status: status || 'PENDING',
-      },
-      include: {
-        patient: true,
-        service: true,
+    const dayStart = new Date(preferredDate + 'T00:00:00');
+    const dayEnd = new Date(preferredDate + 'T23:59:59');
+
+    // Pull everything this doctor has approved in the next 30 days once, so we can both
+    // check this exact slot AND compute alternatives without querying per-day in a loop.
+    const horizonEnd = new Date(dayStart);
+    horizonEnd.setDate(horizonEnd.getDate() + 30);
+
+    const upcomingApproved = await (db as any).appointment.findMany({
+      where: {
+        doctorId: doctor.id,
+        status: 'APPROVED',
+        requestedDate: { gte: dayStart, lte: horizonEnd },
       },
     });
 
-    return NextResponse.json(newAppointment, { status: 201 });
+    const bookedByDate = new Map<string, string[]>();
+    for (const apt of upcomingApproved) {
+      const dateKey = new Date(apt.requestedDate).toISOString().split('T')[0];
+      if (!bookedByDate.has(dateKey)) bookedByDate.set(dateKey, []);
+      if (apt.confirmedTimeLabel) bookedByDate.get(dateKey)!.push(apt.confirmedTimeLabel);
+    }
+
+    const alreadyBooked = (bookedByDate.get(preferredDate) || []).includes(exactTime);
+
+    if (alreadyBooked) {
+      const alternatives = findNextAvailableSlots(
+        doctor.windows,
+        preferredDate,
+        3,
+        (dateStr) => bookedByDate.get(dateStr) || []
+      );
+      return NextResponse.json(
+        {
+          error: 'That slot was just taken. Here are the next available times with this doctor.',
+          alternatives,
+        },
+        { status: 409 }
+      );
+    }
+
+    // --- Slot is free: find/create the patient, then auto-confirm the booking ---
+    let patient = await (db as any).patient.findFirst({ where: { phone } });
+    if (!patient) {
+      patient = await (db as any).patient.create({ data: { name, phone } });
+    } else if (patient.name !== name) {
+      patient = await (db as any).patient.update({ where: { id: patient.id }, data: { name } });
+    }
+
+    const slotWindow = slotWindowFromExactTime(exactTime);
+    const requestedDateTime = new Date(preferredDate + 'T00:00:00');
+
+    const newAppointment = await (db as any).appointment.create({
+      data: {
+        patientId: patient.id,
+        serviceId: doctor.serviceId,
+        doctorId: doctor.id,
+        requestedDate: requestedDateTime,
+        slotWindow,
+        preferredTimeLabel: exactTime,
+        status: 'APPROVED',
+        proposedDate: requestedDateTime,
+        proposedSlotWindow: slotWindow,
+        confirmedTimeLabel: exactTime,
+      },
+      include: { patient: true, service: true, doctor: true },
+    });
+
+    return NextResponse.json(
+      {
+        id: newAppointment.id,
+        patientName: newAppointment.patient?.name,
+        patientPhone: newAppointment.patient?.phone,
+        reason: newAppointment.service?.name,
+        doctorId: newAppointment.doctorId,
+        doctorName: newAppointment.doctor?.name,
+        specialtyLabel: newAppointment.doctor?.specialtyLabel,
+        preferredDate,
+        confirmedSlot: exactTime,
+        confirmedDate: preferredDate,
+        status: 'APPROVED',
+      },
+      { status: 201 }
+    );
   } catch (error: any) {
     console.error('Error creating appointment:', error);
     return NextResponse.json({ error: error?.message || String(error) }, { status: 500 });
@@ -227,8 +227,6 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Missing appointment ID' }, { status: 400 });
     }
 
-    // Map any legacy UI status values to the real AppointmentStatus enum.
-    // 'APPROVED' is the single source of truth — the DB schema has no 'CONFIRMED' value.
     let validStatus = status;
     if (status === 'CONFIRMED' || status === 'SCHEDULED' || status === 'APPROVED') {
       validStatus = 'APPROVED';
@@ -239,13 +237,9 @@ export async function PUT(request: Request) {
       data: {
         status: validStatus || 'APPROVED',
         confirmedTimeLabel: confirmedSlot === null ? null : confirmedSlot || undefined,
-        proposedSlotWindow: confirmedSlot ? getSlotWindowEnum(confirmedSlot) : confirmedSlot === null ? null : undefined,
         proposedDate: confirmedDate === null ? null : confirmedDate ? new Date(confirmedDate) : undefined,
       },
-      include: {
-        patient: true,
-        service: true,
-      },
+      include: { patient: true, service: true, doctor: true },
     });
 
     return NextResponse.json(updated, { status: 200 });
