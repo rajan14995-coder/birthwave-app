@@ -6,6 +6,29 @@ import BookingModal from '@/components/patient/BookingModal';
 import AppointmentHistory from '@/components/patient/AppointmentHistory';
 import FertilityAssessmentQuiz from '@/components/patient/FertilityAssessmentQuiz';
 
+// Translates the raw /api/appointments response into the shape AppointmentHistory renders
+function mapApiAppointmentToHistoryShape(apt: any) {
+  const rawStatus = (apt.status || '').toUpperCase();
+  let status: 'Pending Confirmation' | 'Confirmed' | 'Suggested Time' | 'Cancelled' = 'Pending Confirmation';
+  if (rawStatus === 'APPROVED') status = 'Confirmed';
+  else if (rawStatus === 'CANCELLED' || rawStatus === 'DECLINED') status = 'Cancelled';
+  else if (rawStatus === 'RESCHEDULE_PROPOSED') status = 'Suggested Time';
+
+  return {
+    id: apt.id,
+    patientName: apt.patientName,
+    patientPhone: apt.patientPhone,
+    doctorName: apt.doctorName || 'Dr. Santhoshi',
+    preferredDate: apt.preferredDate,
+    preferredTimeSlot: apt.preferredTimeSlot,
+    exactTime: apt.confirmedSlot || null,
+    suggestedTime: rawStatus === 'RESCHEDULE_PROPOSED' ? apt.confirmedSlot : null,
+    reason: apt.reason,
+    status,
+    createdDate: apt.createdAt ? new Date(apt.createdAt).toISOString().split('T')[0] : '',
+  };
+}
+
 export default function PatientDashboard() {
   const router = useRouter();
   const [patient, setPatient] = useState<{ name: string; phone: string } | null>(null);
@@ -22,7 +45,7 @@ export default function PatientDashboard() {
       });
       if (res.ok) {
         const data = await res.json();
-        setAppointments(data);
+        setAppointments(Array.isArray(data) ? data.map(mapApiAppointmentToHistoryShape) : []);
       }
     } catch (error) {
       console.error('Failed to load patient appointments:', error);
