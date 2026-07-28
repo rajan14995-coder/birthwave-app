@@ -1,5 +1,4 @@
 import React from 'react';
-import Image from 'next/image';
 
 export default function TestimonialsSection() {
   const stats = [
@@ -15,21 +14,21 @@ export default function TestimonialsSection() {
       role: 'First-time Mother',
       quote: 'Dr. Santhoshi and the BirthWave team transformed my pregnancy journey. The personalized care and childbirth education gave me complete confidence.',
       rating: 5,
-      image: '/images/patient-1.jpg',
+      initials: 'PS',
     },
     {
       name: 'Ananya & Rohan Verma',
       role: 'Fertility Guidance Patients',
       quote: 'After months of uncertainty, Dr. Santhoshi’s clear assessment and warm approach gave us hope and a clear path forward. We are forever grateful.',
       rating: 5,
-      image: '/images/patient-2.jpg',
+      initials: 'AV',
     },
     {
       name: 'Kavitha Sundaram',
       role: 'Prenatal Yoga & Wellness',
       quote: 'The prenatal yoga classes combined with regular consultations made my delivery experience smooth and manageable. Highly recommended!',
       rating: 5,
-      image: '/images/patient-3.jpg',
+      initials: 'KS',
     },
   ];
 
@@ -61,8 +60,8 @@ export default function TestimonialsSection() {
           <span className="px-4 py-1.5 rounded-full bg-rose-100 text-rose-800 text-xs font-bold uppercase tracking-wider">
             Patient Stories
           </span>
-          <h2 className="text-3xl sm:text-5xl font-extrabold text-gray-900 tracking-tight">
-            Loved by Thousands of Mothers & Families
+          <h2 className="font-display text-3xl sm:text-5xl font-semibold text-gray-900 tracking-tight">
+            Loved by Thousands of Mothers &amp; Families
           </h2>
           <p className="text-gray-600 text-base sm:text-lg">
             Real experiences from parents who trusted Dr. Santhoshi and BirthWave with their healthcare journey.
@@ -91,16 +90,8 @@ export default function TestimonialsSection() {
 
               {/* Author Info */}
               <div className="flex items-center gap-4 pt-4 border-t border-rose-100">
-                <div className="relative w-12 h-12 rounded-full overflow-hidden bg-rose-200 shrink-0">
-                  <Image
-                    src={item.image}
-                    alt={item.name}
-                    fill
-                    className="object-cover"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLElement).style.display = 'none';
-                    }}
-                  />
+                <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-rose-500 to-amber-500 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-sm">
+                  {item.initials}
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-gray-900">{item.name}</h4>
