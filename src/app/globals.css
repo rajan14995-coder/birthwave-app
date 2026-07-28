@@ -1,6 +1,16 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700;800&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 :root {
   --foreground-rgb: 0, 0, 0;
@@ -11,6 +21,7 @@
 body {
   color: rgb(var(--foreground-rgb));
   background: white;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer utilities {
