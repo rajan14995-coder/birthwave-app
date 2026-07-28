@@ -1,6 +1,7 @@
 import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import WaveDivider from './WaveDivider';
 
 interface HeroSectionProps {
   onBookClick?: () => void;
@@ -25,10 +26,10 @@ export default function HeroSection({ onBookClick }: HeroSectionProps) {
               </span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-gray-900 tracking-tight leading-[1.15]">
+            <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-semibold text-gray-900 tracking-tight leading-[1.15]">
               Empowering Your Journey To <br className="hidden sm:inline" />
-              <span className="bg-clip-text text-transparent bg-gradient-to-r from-rose-600 via-rose-500 to-amber-600">
-                Motherhood & Wellness
+              <span className="italic bg-clip-text text-transparent bg-gradient-to-r from-rose-600 via-rose-500 to-amber-600">
+                Motherhood &amp; Wellness
               </span>
             </h1>
 
@@ -45,7 +46,7 @@ export default function HeroSection({ onBookClick }: HeroSectionProps) {
                 Book Appointment
               </button>
               <Link
-                href="#doctor-intro"
+                href="#doctors"
                 className="w-full sm:w-auto px-8 py-4 rounded-xl bg-white/80 backdrop-blur-md border border-gray-200 text-gray-800 font-semibold text-base hover:bg-gray-50 transition-all duration-200 text-center"
               >
                 Meet Dr. Santhoshi
@@ -99,6 +100,7 @@ export default function HeroSection({ onBookClick }: HeroSectionProps) {
 
         </div>
       </div>
+      <WaveDivider color="fill-white" className="absolute bottom-0 left-0" />
     </section>
   );
 }
