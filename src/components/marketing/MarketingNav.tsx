@@ -112,7 +112,7 @@ export default function MarketingNav({ onBookClick }: { onBookClick?: () => void
             onClick={onBookClick}
             className="rounded-xl bg-rose-600 hover:bg-rose-700 px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-bold text-white shadow-md transition-all hover:scale-105"
           >
-            Book Appointment →
+            Book Appointment &rarr;
           </button>
         </div>
       </div>
