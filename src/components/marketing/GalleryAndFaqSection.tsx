@@ -48,7 +48,7 @@ export default function GalleryAndFaqSection() {
     },
     {
       question: 'How does appointment booking work?',
-      answer: 'Pick a specialist and an open time slot in the Patient Portal - if it\u2019s free, your appointment is confirmed instantly. No waiting on a callback.',
+      answer: 'Pick a specialist and an open time slot in the Patient Portal - if it’s free, your appointment is confirmed instantly. No waiting on a callback.',
     },
     {
       question: 'Do you offer online consultations?',
@@ -77,7 +77,7 @@ export default function GalleryAndFaqSection() {
             {channels.map((channel) => {
               const Icon = channel.Icon;
               return (
-                
+                <a
                   key={channel.title}
                   href={channel.href}
                   target="_blank"
@@ -120,7 +120,7 @@ export default function GalleryAndFaqSection() {
                 >
                   <span>{faq.question}</span>
                   <span className="text-rose-600 font-bold text-xl ml-4">
-                    {openFaq === idx ? '\u2212' : '+'}
+                    {openFaq === idx ? '−' : '+'}
                   </span>
                 </button>
                 {openFaq === idx && (
