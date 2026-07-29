@@ -89,7 +89,7 @@ export default function MarketingNav({ onBookClick }: { onBookClick?: () => void
         </nav>
 
         <div className="flex items-center gap-2">
-          
+          <a
             href="tel:+919363031925"
             className="hidden xl:flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-rose-600 mr-1"
           >
