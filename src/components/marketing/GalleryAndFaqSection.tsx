@@ -48,11 +48,11 @@ export default function GalleryAndFaqSection() {
     },
     {
       question: 'How does appointment booking work?',
-      answer: 'Pick a specialist and an open time slot in the Patient Portal — if it\u2019s free, your appointment is confirmed instantly. No waiting on a callback.',
+      answer: 'Pick a specialist and an open time slot in the Patient Portal - if it\u2019s free, your appointment is confirmed instantly. No waiting on a callback.',
     },
     {
       question: 'Do you offer online consultations?',
-      answer: 'Yes — our birth doula, Sheetal, consults exclusively online, and several other specialists offer video consultations on request.',
+      answer: 'Yes - our birth doula, Sheetal, consults exclusively online, and several other specialists offer video consultations on request.',
     },
   ];
 
@@ -70,7 +70,7 @@ export default function GalleryAndFaqSection() {
               Follow Our Journey
             </h2>
             <p className="text-gray-600 text-sm sm:text-base">
-              Real birth stories, clinic moments, and honest conversations — on YouTube and Instagram.
+              Real birth stories, clinic moments, and honest conversations - on YouTube and Instagram.
             </p>
           </div>
 
