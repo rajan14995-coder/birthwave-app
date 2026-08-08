@@ -1,18 +1,17 @@
-// Shared scheduling helpers used by the doctor-slots endpoint and the booking endpoint.
-// Keeping this in one place means both sides always agree on what "available" means.
+// Shared scheduling helpers used by the doctor-slots endpoint, the booking endpoint,
+// and the unavailability/auto-reschedule endpoint. Keeping this in one place means
+// every part of the app always agrees on what "available" means.
 
 export const MIN_BOOKING_LEAD_MINUTES = 30;
 export const SLOT_STEP_MINUTES = 30;
 
 export type DoctorWindow = { start: string; end: string }; // 24h "HH:mm"
 
-// "10:30" -> 630
 function timeToMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map((n) => parseInt(n, 10));
   return h * 60 + m;
 }
 
-// 630 -> "10:30 AM"
 function minutesTo12h(totalMinutes: number): string {
   let h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
@@ -22,7 +21,6 @@ function minutesTo12h(totalMinutes: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${meridiem}`;
 }
 
-// "10:30 AM" -> 630
 export function time12hToMinutes(label: string): number | null {
   const match = label.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
   if (!match) return null;
@@ -34,9 +32,6 @@ export function time12hToMinutes(label: string): number | null {
   return hours * 60 + minutes;
 }
 
-// All bookable slot labels for one day given a doctor's windows, e.g.
-// [{"start":"10:00","end":"13:00"}] -> ["10:00 AM","10:30 AM", ... ,"12:30 PM"]
-// (end time itself is excluded — a 13:00 end means the last bookable start is 12:30)
 export function generateDaySlots(windows: DoctorWindow[]): string[] {
   const slots: string[] = [];
   for (const w of windows || []) {
@@ -54,7 +49,6 @@ export function isSunday(dateStr: string): boolean {
   return d.getDay() === 0;
 }
 
-// Builds the real Date/time for a "HH:mm AM/PM" label on a given YYYY-MM-DD date
 export function getSlotDateTime(dateStr: string, timeLabel: string): Date | null {
   const minutes = time12hToMinutes(timeLabel);
   if (minutes === null) return null;
@@ -70,8 +64,6 @@ export function addDaysToDateStr(dateStr: string, days: number): string {
   return d.toISOString().split('T')[0];
 }
 
-// Available slots for one specific date: doctor's day slots, minus already-booked
-// times, minus anything inside the minimum lead time window (if the date is today/soon).
 export function getAvailableSlotsForDate(
   windows: DoctorWindow[],
   dateStr: string,
@@ -89,20 +81,23 @@ export function getAvailableSlotsForDate(
 }
 
 // Finds the next N available slots for a doctor starting from (and including) fromDate,
-// walking forward day by day (skipping Sundays), given a function that returns the
-// already-booked times for any given date.
+// walking forward day by day (skipping Sundays and any date isDateBlocked() flags —
+// e.g. a doctor-leave range), given a function that returns the already-booked times
+// for any given date.
 export function findNextAvailableSlots(
   windows: DoctorWindow[],
   fromDate: string,
   count: number,
   getBookedTimesForDate: (dateStr: string) => string[],
-  maxDaysToScan = 30
+  maxDaysToScan = 45,
+  isDateBlocked?: (dateStr: string) => boolean
 ): Array<{ date: string; time: string }> {
   const results: Array<{ date: string; time: string }> = [];
   let candidate = fromDate;
 
   for (let i = 0; i < maxDaysToScan && results.length < count; i++) {
-    if (!isSunday(candidate)) {
+    const blocked = isDateBlocked ? isDateBlocked(candidate) : false;
+    if (!isSunday(candidate) && !blocked) {
       const available = getAvailableSlotsForDate(windows, candidate, getBookedTimesForDate(candidate));
       for (const time of available) {
         results.push({ date: candidate, time });
